@@ -9,6 +9,7 @@
 package org.elasticsearch.script.field;
 
 import org.elasticsearch.test.ESTestCase;
+import org.junit.Ignore;
 
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +44,7 @@ public class FieldStorageTest extends ESTestCase {
         s.put("bar", "a.b", "c");
 
         assertThat(s.getField("a", "b", "c").toList(), contains("foo", "bar"));
+        assertThat(s.getCtx("a", "b", "c"), is(Optional.empty()));
         assertThat(s.getCtx("a", "b.c"), equalTo(Optional.of("foo")));
         assertThat(s.getCtx("a.b", "c"), equalTo(Optional.of("bar")));
     }
@@ -55,5 +57,16 @@ public class FieldStorageTest extends ESTestCase {
 
         assertThat(s.getCtx("a", "b").get(), theInstance(data));
         assertThat(s.getCtx("a", "c").get(), theInstance(data));
+    }
+
+    @Ignore
+    public void testValueAndNestedField() {
+        FieldStorage s = new FieldStorage();
+        s.put(10, "value");
+        s.put(15, "value", "max");
+        s.put(5, "value", "min");
+
+        // what does this return?
+        s.getField("value");
     }
 }
