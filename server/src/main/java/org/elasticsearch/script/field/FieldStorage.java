@@ -41,7 +41,7 @@ public class FieldStorage {
     }
 
     private static class Node {
-        private final NavigableMap<Key, Object> fields = new TreeMap<>();
+        private final NavigableMap<Key, Object> nested = new TreeMap<>();
     }
 
     private final Node root = new Node();
@@ -51,7 +51,7 @@ public class FieldStorage {
 
         Object curr = root;
         do {
-            curr = ((Node)curr).fields.get(fields.next());
+            curr = ((Node)curr).nested.get(fields.next());
         } while (fields.hasNext() && curr != null);
         return Optional.ofNullable(curr);
     }
@@ -66,7 +66,7 @@ public class FieldStorage {
             Key min = Key.min(f);
             Key max = Key.max(f);
             currentValues = currentValues
-                .flatMap(n -> ((Node)n).fields.subMap(min, true, max, true).values().stream());
+                .flatMap(n -> ((Node)n).nested.subMap(min, true, max, true).values().stream());
         }
         return currentValues;
     }
@@ -78,11 +78,11 @@ public class FieldStorage {
             Key next = fields.next();
             if (fields.hasNext() == false) {
                 // this is the final key - put the data here
-                curr.fields.put(next, value);
+                curr.nested.put(next, value);
                 return;
             }
             else {
-                curr = (Node)curr.fields.computeIfAbsent(next, k -> new Node());
+                curr = (Node)curr.nested.computeIfAbsent(next, k -> new Node());
             }
         }
     }

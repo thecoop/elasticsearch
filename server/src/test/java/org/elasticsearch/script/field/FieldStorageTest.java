@@ -10,11 +10,13 @@ package org.elasticsearch.script.field;
 
 import org.elasticsearch.test.ESTestCase;
 
+import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.theInstance;
 
 public class FieldStorageTest extends ESTestCase {
 
@@ -43,5 +45,15 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(s.getField("a", "b", "c").toList(), contains("foo", "bar"));
         assertThat(s.getCtx("a", "b.c"), equalTo(Optional.of("foo")));
         assertThat(s.getCtx("a.b", "c"), equalTo(Optional.of("bar")));
+    }
+
+    public void testMultiHomePutGet() {
+        FieldStorage s = new FieldStorage();
+        Map<String, String> data = Map.of("foo", "foo", "bar", "bar");
+        s.put(data, "a", "b");
+        s.put(data, "a", "c");
+
+        assertThat(s.getCtx("a", "b").get(), theInstance(data));
+        assertThat(s.getCtx("a", "c").get(), theInstance(data));
     }
 }
