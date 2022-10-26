@@ -8,9 +8,15 @@
 
 package org.elasticsearch.script.field;
 
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
@@ -47,7 +53,7 @@ public class FieldStorage {
     private final Node root = new Node();
 
     public Optional<?> getCtx(String... field) {
-        var fields = accessKeys(field).iterator();
+        var fields = accessKeys(Arrays.stream(field)).iterator();
 
         Object curr = root;
         do {
@@ -71,8 +77,25 @@ public class FieldStorage {
         return currentValues;
     }
 
+    public Stream<?> findAllWithPrefix(String prefix) {
+        String[] path = prefix.split("\\.");
+        Node anchorNode = root;
+        if (path.length > 1) {
+            var fields = accessKeys(Arrays.stream(path, 0, path.length-1)).iterator();
+
+            do {
+                anchorNode = (Node)anchorNode.nested.get(fields.next());
+            } while (fields.hasNext() && anchorNode != null);
+        }
+        if (anchorNode == null) return Stream.empty();
+
+        String purePrefix = path[path.length-1];
+        // and recursively iterate through all nested child maps too...
+        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE)).values().stream();
+    }
+
     public void put(Object value, String... field) {
-        var fields = accessKeys(field).iterator();
+        var fields = accessKeys(Arrays.stream(field)).iterator();
 
         for (Node curr = root;;) {
             Key next = fields.next();
@@ -87,9 +110,8 @@ public class FieldStorage {
         }
     }
 
-    private static Stream<Key> accessKeys(String... field) {
-        assert field.length > 1;
-        return Arrays.stream(field)
+    private static Stream<Key> accessKeys(Stream<String> path) {
+        return path
             .flatMap(s -> {
                 String[] sf = s.split("\\.");
                 int prefixLength = sf.length-1;
@@ -100,5 +122,33 @@ public class FieldStorage {
                             Arrays.stream(sf, 0, prefixLength).map(Key::new),
                             Stream.of(sf[prefixLength]).map(pf -> new Key(pf, prefixLength)));
             });
+    }
+
+    private static class NestedCtxMap extends AbstractMap<String, Object> {
+        private final Map<Key, Object> nodeData;
+
+        private NestedCtxMap(Map<Key, Object> nodeData) {
+            this.nodeData = nodeData;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            // don't include keys in nodeData with prefix > 0
+            // need to also include any prefixed keys further down the collections
+            // recursively scan all child objects for any with a prefix < the distance from that object to here
+
+            // this means iteration & size() will be O(total number of recursive child objects)
+            return new AbstractSet<>() {
+                @Override
+                public Iterator<Entry<String, Object>> iterator() {
+                    return null;
+                }
+
+                @Override
+                public int size() {
+                    return 0;
+                }
+            };
+        }
     }
 }
