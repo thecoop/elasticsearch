@@ -12,6 +12,7 @@ import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -153,19 +154,94 @@ public class FieldStorage {
         return fv != null ? fv.ctxGet() : null;
     }
 
-    public Stream<?> getField(String... field) {
+    public List<?> getField(String... field) {
         assert field.length > 0;
         // ignore prefix here
-        Stream<Node> currentValues = Stream.of(root);
-        for (String f : field) {
+        List<Node> currentValues = List.of(root);
+        Map<Integer, Node> unmanagedValues = new HashMap<>();
+        List<?> results = new ArrayList<>();
+        for (int i=0; i < field.length; i++) {
+            List<Node> nextLevel = new ArrayList<>();
+            String f = field[i];
             if (f.contains(".")) throw new IllegalArgumentException();
 
             Key min = Key.min(f);
             Key max = Key.max(f);
+            for (Node node : currentValues) {
+                if (node.value instanceof Map<?, ?> map) {
+
+                }
+                node.nested.subMap(min, true, max, true).values();
+            }
+            /*
             currentValues = currentValues
                 .flatMap(n -> n.nested.subMap(min, true, max, true).values().stream());
         }
         return currentValues.map(n -> n.value).filter(Objects::nonNull);
+             */
+        }
+        return null;
+    }
+
+    /**
+     * Search for keys matching the substring path[start:] in root, recursively.  Accumulate results
+     * in {@param result}.
+     */
+    @SuppressWarnings("unchecked")
+    /*
+    private static void search(List<Object> result, int start, String[] path, Map<String, Object> root) {
+        for (Map.Entry<String, Object> entry : root.entrySet()) {
+            int m = match(start, path, entry.getKey());
+            if (m == 0) {
+                result.add(entry.getValue());
+            } else if (m > 0) {
+                if (entry.getValue()instanceof Map<?, ?> map) {
+                    search(result, start + m + 1, path, (Map<String, Object>) map);
+                }
+            }
+        }
+    }
+    */
+
+    /**
+     * Match segments from source against candidate.
+     * Return:
+     *   -1 if source does not match candidate
+     *   0 if source exactly matches candidate
+     *   > 0 if candidate fully matches some number of segments.  Returned value is the index of first unmatched segment
+     */
+    public static int match(int pathStart, String[] path, String candidate) {
+        int candidateStart = 0;
+        for (int i=pathStart; i < path.length; i++) {
+            String pathSegment = path[i];
+            int maxMatchLength = candidate.length() - candidateStart;
+            if (pathSegment.length() > maxMatchLength) {
+                // candidate too short, assumes no dots in path
+                return -1;
+            }
+            // pathSegment is <= candidate length
+            for (int j=0; j < pathSegment.length(); j++) {
+                if (pathSegment.charAt(j) != candidate.charAt(candidateStart + j)) {
+                    // different character
+                    return -1;
+                }
+            }
+            candidateStart += pathSegment.length();
+            if (candidateStart == candidate.length()) {
+                if (i == path.length - 1) {
+                    // full match
+                    return 0;
+                }
+                // start with next segment
+                return i + 1;
+            }
+            // candidate has more values and we are at a segment boundrary, so next char must be a dot.
+            if (candidate.charAt(candidateStart++) != '.') {
+                return -1;
+            }
+        }
+        // matched all path segments but candidate had extra values (starting with dot due to last conditional)
+        return -1;
     }
 
     public Stream<?> findAllWithPrefix(String prefix) {

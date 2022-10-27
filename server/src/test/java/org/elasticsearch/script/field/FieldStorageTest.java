@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.elasticsearch.script.field.FieldStorage.match;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
@@ -30,7 +31,7 @@ public class FieldStorageTest extends ESTestCase {
         FieldStorage s = new FieldStorage();
         s.put("foo", "a", "b", "c");
 
-        assertThat(s.getField("a", "b", "c").toList(), contains("foo"));
+        assertThat(s.getField("a", "b", "c"), contains("foo"));
         assertThat(s.getCtx("a", "b", "c"), equalTo(Optional.of("foo")));
     }
 
@@ -38,7 +39,7 @@ public class FieldStorageTest extends ESTestCase {
         FieldStorage s = new FieldStorage();
         s.put("foo", "a", "b.c");
 
-        assertThat(s.getField("a", "b", "c").toList(), contains("foo"));
+        assertThat(s.getField("a", "b", "c"), contains("foo"));
         assertThat(s.getCtx("a", "b.c"), equalTo(Optional.of("foo")));
         assertThat(s.getCtx("a", "b", "c"), is(Optional.empty()));
     }
@@ -49,7 +50,7 @@ public class FieldStorageTest extends ESTestCase {
         s.put("foo", "a", "b.c");
         s.put("baz", "a.b.c");
 
-        assertThat(s.getField("a", "b", "c").toList(), containsInAnyOrder("foo", "bar", "baz"));
+        assertThat(s.getField("a", "b", "c"), containsInAnyOrder("foo", "bar", "baz"));
         assertThat(s.getCtx("a", "b", "c"), is(Optional.empty()));
         assertThat(s.getCtx("a", "b.c"), equalTo(Optional.of("foo")));
         assertThat(s.getCtx("a.b", "c"), equalTo(Optional.of("bar")));
@@ -124,9 +125,9 @@ public class FieldStorageTest extends ESTestCase {
         s.put("bar", "a.b", "c");
 
         assertThat(s.remove("a", "b", "c"), is("foo"));
-        assertThat(s.getField("a", "b", "c").toList(), contains("bar"));
+        assertThat(s.getField("a", "b", "c"), contains("bar"));
         assertThat(s.remove("a.b", "c"), is("bar"));
-        assertThat(s.getField("a", "b", "c").toList(), empty());
+        assertThat(s.getField("a", "b", "c"), empty());
     }
 
     public void testNestedRemove() {
@@ -153,6 +154,14 @@ public class FieldStorageTest extends ESTestCase {
         unmanaged.put("c", cMap);
         cMap.put("d", "baz");
 
-        assertThat(s.getField("a", "b", "c", "d").toList(), containsInAnyOrder("foo", "bar", "baz"));
+        assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "bar", "baz"));
+    }
+
+    public void testMatch() {
+        String candidate = "abcd.efg";
+        String[] path = new String[]{"abcd", "efg"};
+        assertEquals(0, match(0, path, candidate));
+        assertEquals(-1, match(0, path, candidate + ".")); // final return
+        assertEquals(2, match(1, new String[]{"abc", "defh", "ijkl", "lmn"}, "defh.ijkl"));
     }
 }
