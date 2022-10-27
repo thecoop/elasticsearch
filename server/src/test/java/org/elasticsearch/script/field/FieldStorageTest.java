@@ -165,7 +165,7 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(aObj, instanceOf(Map.class));
         Map<String, Object> aMap = (Map<String, Object>) aObj;
         aMap.put("b", unmanaged);
-        unmanaged.put("c", ((Map<String, Object>) s.getCtxMap("a")).get("b.c"));
+        unmanaged.put("c", ((Map<?, ?>) s.getCtxMap("a")).get("b.c"));
 
         assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "foo"));
     }
@@ -178,22 +178,24 @@ public class FieldStorageTest extends ESTestCase {
         assertEquals(2, match(1, new String[]{"abc", "defh", "ijkl", "lmn"}, "defh.ijkl"));
     }
 
-    @Ignore
     public void testRehoming() {
         FieldStorage s = new FieldStorage();
         s.put("foo", "a", "b", "c");
 
-        Map<?, ?> m = (Map<?, ?>)s.getCtxMap("a");
+        Map<String, Object> m = (Map<String, Object>)s.getCtxMap("a");
         s.put(m, "z");
+        m = (Map<String, Object>)s.getCtxMap("z");
+        m.put("q", "r");
+        assertThat(s.getField("a", "q"), contains("r"));
     }
 
-    @Ignore
     public void testIndirectRehoming() {
         FieldStorage s = new FieldStorage();
         s.put("foo", "a", "b", "c");
 
         Map<?, ?> m = (Map<?, ?>)s.getCtxMap("a");
-        s.put(Map.of("i", m), "z");
+        s.put(new HashMap<>(Map.of("i", m)), "z");
+        assertThat(s.getField("z", "i", "b", "c"), contains("foo"));
     }
 
     @Ignore

@@ -12,7 +12,6 @@ import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -27,6 +26,11 @@ import java.util.stream.Stream;
 
 public class FieldStorage {
 
+    /**
+     * A key into the field graph, {@param field} is a segment, it must not contain the segment separator, a dot.
+     * {@param prefix} is the number of segment separators in the original key's path, or equivalently, one less than the number
+     * of segments.  The prefix is only necessary for the last segment.  Intermediate segments have prefix of zero.
+     */
     private record Key(String field, int prefix) implements Comparable<Key> {
 
         private static Key min(String field) {
@@ -57,16 +61,16 @@ public class FieldStorage {
      * If the value {@param isMap} then caller should inspect the {@link Node#nestedCtxValues} of the value Node to
      * construct the map.
      */
-    private record FieldValue(Key fieldKey, Node fieldNode, boolean isMap) {
-        public FieldValue {
+    private record FieldValueReference(Key fieldKey, Node fieldNode, boolean isMap) {
+        public FieldValueReference {
             Objects.requireNonNull(fieldKey);
             Objects.requireNonNull(fieldNode);
         }
 
-        private FieldValue(Key key, Node parent) {
-            this(key, parent, false);
-        }
-
+        /**
+         * Dereference this object for use in ctx.  If {@link #isMap} then return a {@link NestedCtxMap} for the node,
+         * otherwise return {@link Node#value} for the referenced node.
+         */
         Object ctxGet() {
             Node node = fieldNode.nested().get(fieldKey);
             if (isMap) {
@@ -78,6 +82,7 @@ public class FieldStorage {
             return node.value;
         }
 
+        // TODO(stu): untested
         Object ctxSet(Object value) {
             return fieldNode.getContainer(fieldKey).setValue(value);
         }
@@ -96,12 +101,19 @@ public class FieldStorage {
         }
     }
 
+    /**
+     * A node in the {@link FieldStorage} tree.  Nodes can have values and children.
+     * If accessed in field-centric manner, which uses the {@link #nested} Map.
+     * If accessed in a ctx-centric manner, the {@link #nestedCtxValues} Map provides references to {@link Node}s further
+     * down the tree corresponding to the keys that would be in the ctx view of this container.
+     */
     private static class Node {
+        // value at the node, a node may have both a value and children in the case of subobject=false, PR #86166
         private Object value;
-        private Map<String, FieldValue> nestedCtxValues;
+        private Map<String, FieldValueReference> nestedCtxValues;
         private NavigableMap<Key, Node> nested;
 
-        Map<String, FieldValue> nestedCtxValues() {
+        Map<String, FieldValueReference> nestedCtxValues() {
             return Objects.requireNonNullElse(nestedCtxValues, Collections.emptyMap());
         }
 
@@ -122,17 +134,33 @@ public class FieldStorage {
             return nested.computeIfAbsent(key, k -> new Node());
         }
 
+        /**
+         * Map the {@link Key} to an existing {@link Node}.  This only occurs during rehoming via ctx access.
+         */
+        void setContainer(Key key, Node value) {
+            if (nested == null) {
+                nested = new TreeMap<>();
+            }
+            nested.put(key, value);
+        }
+
         void putCtxValue(String ctxKey, Key fieldKey, Node fieldNode, boolean isMap) {
             if (nestedCtxValues == null) {
                 nestedCtxValues = new HashMap<>();
             }
-            nestedCtxValues.putIfAbsent(ctxKey, new FieldValue(fieldKey, fieldNode, isMap));
+            nestedCtxValues.putIfAbsent(ctxKey, new FieldValueReference(fieldKey, fieldNode, isMap));
         }
 
         // for debugging
         @Override
         public String toString() {
-            return (nestedCtxValues().isEmpty() ? "<internal>" : "{" + nestedCtxValues().keySet() + "}") + " <" + this.value + ">" + " [" + nested().keySet() + "]";
+            return (nestedCtxValues().isEmpty() ? "<internal>" : "{" + nestedCtxValues().keySet() + "}")
+                + " <"
+                + this.value
+                + ">"
+                + " ["
+                + nested().keySet()
+                + "]";
         }
     }
 
@@ -149,7 +177,7 @@ public class FieldStorage {
     }
 
     public Object getCtxMap(String key) {
-        FieldValue fv =  root.nestedCtxValues().get(key);
+        FieldValueReference fv = root.nestedCtxValues().get(key);
         return fv != null ? fv.ctxGet() : null;
     }
 
@@ -162,7 +190,7 @@ public class FieldStorage {
         assert field.length > 0;
         // ignore prefix here
         List<Node> currentValues = List.of(root);
-        for (int i=start; i < field.length; i++) {
+        for (int i = start; i < field.length; i++) {
             List<Node> nextLevel = new ArrayList<>();
             String f = field[i];
             if (f.contains(".")) throw new IllegalArgumentException();
@@ -170,10 +198,13 @@ public class FieldStorage {
             Key min = Key.min(f);
             Key max = Key.max(f);
             for (Node node : currentValues) {
+                // Unmanaged map
                 if (node.value instanceof Map<?, ?> map) {
                     search(result, i, field, (Map<String, Object>) map);
                 }
-                nextLevel.addAll(node.nested.subMap(min, true, max, true).values());
+                if (node.nested != null) {
+                    nextLevel.addAll(node.nested.subMap(min, true, max, true).values());
+                }
             }
             currentValues = nextLevel;
         }
@@ -196,7 +227,7 @@ public class FieldStorage {
                 result.add(entry.getValue());
             } else if (m > 0) {
                 if (entry.getValue()instanceof Map<?, ?> map) {
-                    if (entry.getValue() instanceof NestedCtxMap nested) {
+                    if (entry.getValue()instanceof NestedCtxMap nested) {
                         getField(result, nested.node, m + 1, path);
                     } else {
                         // TODO(stu): handle entries that are NestedCtxMap
@@ -216,7 +247,7 @@ public class FieldStorage {
      */
     public static int match(int pathStart, String[] path, String candidate) {
         int candidateStart = 0;
-        for (int i=pathStart; i < path.length; i++) {
+        for (int i = pathStart; i < path.length; i++) {
             String pathSegment = path[i];
             int maxMatchLength = candidate.length() - candidateStart;
             if (pathSegment.length() > maxMatchLength) {
@@ -224,7 +255,7 @@ public class FieldStorage {
                 return -1;
             }
             // pathSegment is <= candidate length
-            for (int j=0; j < pathSegment.length(); j++) {
+            for (int j = 0; j < pathSegment.length(); j++) {
                 if (pathSegment.charAt(j) != candidate.charAt(candidateStart + j)) {
                     // different character
                     return -1;
@@ -239,7 +270,7 @@ public class FieldStorage {
                 // this is the last segment that can match
                 return i;
             }
-            // candidate has more values and we are at a segment boundrary, so next char must be a dot.
+            // candidate has more values and we are at a segment boundary, so next char must be a dot.
             if (candidate.charAt(candidateStart++) != '.') {
                 return -1;
             }
@@ -252,7 +283,7 @@ public class FieldStorage {
         String[] path = prefix.split("\\.");
         Node anchorNode = root;
         if (path.length > 1) {
-            var fields = accessKeys(Arrays.stream(path, 0, path.length-1)).iterator();
+            var fields = accessKeys(Arrays.stream(path, 0, path.length - 1)).iterator();
 
             do {
                 anchorNode = anchorNode.nested.get(fields.next().fieldKey);
@@ -260,10 +291,13 @@ public class FieldStorage {
         }
         if (anchorNode == null) return Stream.empty();
 
-        String purePrefix = path[path.length-1];
+        String purePrefix = path[path.length - 1];
         // and recursively iterate through all nested child maps too...
-        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE)).values().stream()
-            .map(n -> n.value).filter(Objects::nonNull);
+        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE))
+            .values()
+            .stream()
+            .map(n -> n.value)
+            .filter(Objects::nonNull);
     }
 
     public void put(Object value, String... field) {
@@ -276,15 +310,22 @@ public class FieldStorage {
         for (Node curr = container;;) {
             CtxKeyTailKey next = fields.next();
             if (fields.hasNext() == false) {
-                // this is the final key - put the data here
-                curr.getContainer(next.fieldKey).setValue(value);
+                boolean isMap = false;
+                if (value instanceof NestedCtxMap nested) {
+                    // Rehoming a container
+                    curr.setContainer(next.fieldKey, nested.node);
+                    isMap = true;
+                } else {
+                    // this is the final key - put the data here
+                    curr.getContainer(next.fieldKey).setValue(value);
+                }
+                // TODO(stu): do we need this in case of NestedCtxMap?
+                container.putCtxValue(next.ctxKey, next.fieldKey, curr, isMap);
                 if (next.isLastSegment() == false) {
                     throw new IllegalStateException("no ctx for key [" + next + "] at terminal");
                 }
-                container.putCtxValue(next.ctxKey, next.fieldKey, curr, false);
                 return;
-            }
-            else {
+            } else {
                 if (next.isLastSegment()) {
                     // We know how to access the value now, so add to container at the beginning of this split field.
                     // Also know this is not the final key, so this value is a map.
@@ -312,15 +353,13 @@ public class FieldStorage {
             CtxKeyTailKey next = fields.next();
             if (next.isLastSegment()) {
                 foundNode = foundNode.nested.get(next.fieldKey);
-                if (foundNode == null)
-                    return null;
+                if (foundNode == null) return null;
                 // The top of the next run
                 trail.add(new Breadcrumb(next, foundNode, container));
                 container = foundNode;
             } else {
                 foundNode = foundNode.nested.get(next.fieldKey);
-                if (foundNode == null)
-                    return null;
+                if (foundNode == null) return null;
                 trail.add(new Breadcrumb(next, foundNode, null));
             }
         }
@@ -328,15 +367,14 @@ public class FieldStorage {
         Object value = foundNode.setValue(null);
         if (value != null) {
             // go back up the tree & remove empty containers as we go
-            for (int i=trail.size()-1; i>=1; i--) {
+            for (int i = trail.size() - 1; i >= 1; i--) {
                 var b = trail.get(i);
                 if (b.node.nested().isEmpty() && b.node.value == null) {
-                    trail.get(i-1).node.nested.remove(b.key.fieldKey);
+                    trail.get(i - 1).node.nested.remove(b.key.fieldKey);
                     if (b.ctxNode != null) {
                         b.ctxNode.nestedCtxValues.remove(b.key.ctxKey);
                     }
-                }
-                else {
+                } else {
                     break;
                 }
             }
@@ -346,17 +384,17 @@ public class FieldStorage {
     }
 
     private static Stream<CtxKeyTailKey> accessKeys(Stream<String> path) {
-        return path
-            .flatMap(s -> {
-                String[] sf = s.split("\\.");
-                int prefixLength = sf.length-1;
-                // don't need to specify prefix on intermediate nodes, as they're only visible if there's child data to see
-                return prefixLength == 0
-                    ? Stream.of(new CtxKeyTailKey(s, s))
-                    : Stream.concat(
-                            Arrays.stream(sf, 0, prefixLength).map(CtxKeyTailKey::new),
-                            Stream.of(sf[prefixLength]).map(pf -> new CtxKeyTailKey(s, pf, prefixLength)));
-            });
+        return path.flatMap(s -> {
+            String[] sf = s.split("\\.");
+            int prefixLength = sf.length - 1;
+            // don't need to specify prefix on intermediate nodes, as they're only visible if there's child data to see
+            return prefixLength == 0
+                ? Stream.of(new CtxKeyTailKey(s, s))
+                : Stream.concat(
+                    Arrays.stream(sf, 0, prefixLength).map(CtxKeyTailKey::new),
+                    Stream.of(sf[prefixLength]).map(pf -> new CtxKeyTailKey(s, pf, prefixLength))
+                );
+        });
     }
 
     /**
@@ -367,7 +405,7 @@ public class FieldStorage {
         /**
          * Constructor for an intermediate prefix key
          */
-        private CtxKeyTailKey(String field)  {
+        private CtxKeyTailKey(String field) {
             this(null, new Key(field));
         }
 
@@ -411,13 +449,13 @@ public class FieldStorage {
         @Override
         public Set<Entry<String, Object>> entrySet() {
             return new AbstractSet<>() {
-                final Set<Entry<String, FieldValue>> values = node.nestedCtxValues.entrySet();
+                final Set<Entry<String, FieldValueReference>> values = node.nestedCtxValues.entrySet();
 
                 @Override
                 public Iterator<Entry<String, Object>> iterator() {
                     return new Iterator<>() {
 
-                        Iterator<Entry<String, FieldValue>> it = values.iterator();
+                        Iterator<Entry<String, FieldValueReference>> it = values.iterator();
 
                         @Override
                         public boolean hasNext() {
@@ -426,7 +464,7 @@ public class FieldStorage {
 
                         @Override
                         public Entry<String, Object> next() {
-                            Entry<String, FieldValue> entry = it.next();
+                            Entry<String, FieldValueReference> entry = it.next();
                             return new Entry<String, Object>() {
                                 @Override
                                 public String getKey() {
@@ -440,6 +478,7 @@ public class FieldStorage {
 
                                 @Override
                                 public Object setValue(Object value) {
+                                    // TODO(stu): untested
                                     return entry.getValue().ctxSet(value);
                                 }
                             };
