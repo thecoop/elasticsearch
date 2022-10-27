@@ -10,11 +10,9 @@ package org.elasticsearch.script.field;
 
 import java.util.AbstractMap;
 import java.util.AbstractSet;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -22,7 +20,6 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
@@ -56,7 +53,7 @@ public class FieldStorage {
     /**
      * A reference to a field value in the field value tree.
      * The value is obtained by getting the {@param fieldKey} from the {@param fieldNode}.
-     * If the value {@param isMap} then caller should inspect the {@link Node#ctxValues} of the value Node to
+     * If the value {@param isMap} then caller should inspect the {@link Node#nestedCtxValues} of the value Node to
      * construct the map.
      */
     private record FieldValue(Key fieldKey, Node fieldNode, boolean isMap) {
@@ -70,22 +67,18 @@ public class FieldStorage {
         }
 
         Object ctxGet() {
-            Object value = fieldNode.nested.get(fieldKey);
+            Node node = fieldNode.nested().get(fieldKey);
             if (isMap) {
-                if (value instanceof Node node) {
-                    if (node.ctxValues == null) {
-                        return Collections.emptyMap();
-                    }
-                    return new NestedCtxMap(node);
-                } else {
-                    throw new IllegalStateException("expected map [" + this + "] to have a node, not [" + value + "]");
+                if (node.nestedCtxValues == null) {
+                    return Collections.emptyMap();
                 }
+                return new NestedCtxMap(node);
             }
-            return value;
+            return node.value;
         }
 
         Object ctxSet(Object value) {
-            return fieldNode.nested.put(fieldKey, value);
+            return fieldNode.getContainer(fieldKey).setValue(value);
         }
 
         // This is for debugging via expressions
@@ -93,7 +86,7 @@ public class FieldStorage {
             Object value = fieldNode.nested.get(fieldKey);
             if (isMap) {
                 if (value instanceof Node node) {
-                    return node.ctxValues.keySet();
+                    return node.nestedCtxValues.keySet();
                 } else {
                     throw new IllegalStateException("expected map [" + this + "] to have a node, not [" + value + "]");
                 }
@@ -103,20 +96,43 @@ public class FieldStorage {
     }
 
     private static class Node {
-        private Map<String, FieldValue> ctxValues;
-        private final NavigableMap<Key, Object> nested = new TreeMap<>();
+        private Object value;
+        private Map<String, FieldValue> nestedCtxValues;
+        private NavigableMap<Key, Node> nested;
+
+        Map<String, FieldValue> nestedCtxValues() {
+            return Objects.requireNonNullElse(nestedCtxValues, Collections.emptyMap());
+        }
+
+        NavigableMap<Key, Node> nested() {
+            return Objects.requireNonNullElse(nested, Collections.emptyNavigableMap());
+        }
+
+        Object setValue(Object value) {
+            assert value instanceof Node == false;
+            Object existing = this.value;
+            this.value = value;
+            return existing;
+        }
+
+        Node getContainer(Key key) {
+            if (nested == null) {
+                nested = new TreeMap<>();
+            }
+            return nested.computeIfAbsent(key, k -> new Node());
+        }
+
+        void putCtxValue(String ctxKey, Key fieldKey, Node fieldNode, boolean isMap) {
+            if (nestedCtxValues == null) {
+                nestedCtxValues = new HashMap<>();
+            }
+            nestedCtxValues.putIfAbsent(ctxKey, new FieldValue(fieldKey, fieldNode, isMap));
+        }
 
         // for debugging
         @Override
         public String toString() {
-            return (ctxValues.isEmpty() ? "<internal>" : "{" + ctxValues.keySet() + "}") + " [" + nested.keySet() + "]";
-        }
-
-        void putCtxValue(String ctxKey, Key fieldKey, Node fieldNode, boolean isMap) {
-            if (ctxValues == null) {
-                ctxValues = new HashMap<>();
-            }
-            ctxValues.putIfAbsent(ctxKey, new FieldValue(fieldKey, fieldNode, isMap));
+            return (nestedCtxValues.isEmpty() ? "<internal>" : "{" + nestedCtxValues.keySet() + "}") + " [" + nested.keySet() + "]";
         }
     }
 
@@ -125,31 +141,31 @@ public class FieldStorage {
     public Optional<?> getCtx(String... field) {
         var fields = accessKeys(Arrays.stream(field)).iterator();
 
-        Object curr = root;
+        Node curr = root;
         do {
-            curr = ((Node)curr).nested.get(fields.next().fieldKey);
+            curr = curr.nested.get(fields.next().fieldKey);
         } while (fields.hasNext() && curr != null);
-        return Optional.ofNullable(curr);
+        return Optional.ofNullable(curr).map(n -> n.value);
     }
 
     public Object getCtxMap(String key) {
-        FieldValue fv =  root.ctxValues.get(key);
+        FieldValue fv =  root.nestedCtxValues().get(key);
         return fv != null ? fv.ctxGet() : null;
     }
 
     public Stream<?> getField(String... field) {
         assert field.length > 0;
         // ignore prefix here
-        Stream<Object> currentValues = Stream.of(root);
+        Stream<Node> currentValues = Stream.of(root);
         for (String f : field) {
             if (f.contains(".")) throw new IllegalArgumentException();
 
             Key min = Key.min(f);
             Key max = Key.max(f);
             currentValues = currentValues
-                .flatMap(n -> ((Node)n).nested.subMap(min, true, max, true).values().stream());
+                .flatMap(n -> n.nested.subMap(min, true, max, true).values().stream());
         }
-        return currentValues;
+        return currentValues.map(n -> n.value).filter(Objects::nonNull);
     }
 
     public Stream<?> findAllWithPrefix(String prefix) {
@@ -159,14 +175,15 @@ public class FieldStorage {
             var fields = accessKeys(Arrays.stream(path, 0, path.length-1)).iterator();
 
             do {
-                anchorNode = (Node)anchorNode.nested.get(fields.next());
+                anchorNode = anchorNode.nested.get(fields.next().fieldKey);
             } while (fields.hasNext() && anchorNode != null);
         }
         if (anchorNode == null) return Stream.empty();
 
         String purePrefix = path[path.length-1];
         // and recursively iterate through all nested child maps too...
-        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE)).values().stream();
+        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE)).values().stream()
+            .map(n -> n.value).filter(Objects::nonNull);
     }
 
     public void put(Object value, String... field) {
@@ -177,7 +194,7 @@ public class FieldStorage {
             CtxKeyTailKey next = fields.next();
             if (fields.hasNext() == false) {
                 // this is the final key - put the data here
-                curr.nested.put(next.fieldKey, value);
+                curr.getContainer(next.fieldKey).setValue(value);
                 if (next.isLastSegment() == false) {
                     throw new IllegalStateException("no ctx for key [" + next + "] at terminal");
                 }
@@ -189,11 +206,11 @@ public class FieldStorage {
                     // We know how to access the value now, so add to container at the beginning of this split field.
                     // Also know this is not the final key, so this value is a map.
                     container.putCtxValue(next.ctxKey, next.fieldKey, curr, true);
-                    curr = (Node)curr.nested.computeIfAbsent(next.fieldKey, k -> new Node());
+                    curr = curr.getContainer(next.fieldKey);
                     // The top of the next run
                     container = curr;
                 } else {
-                    curr = (Node)curr.nested.computeIfAbsent(next.fieldKey, k -> new Node());
+                    curr = curr.getContainer(next.fieldKey);
                 }
             }
         }
@@ -205,45 +222,39 @@ public class FieldStorage {
         record Breadcrumb(CtxKeyTailKey key, Node node, Node ctxNode) {}
 
         List<Breadcrumb> trail = new ArrayList<>();
+        Node foundNode = root;
         Node container = root;
         trail.add(new Breadcrumb(null, root, null));
-        boolean removed;
-        Object value;
-        for (Node curr = root;;) {
+        while (fields.hasNext()) {
             CtxKeyTailKey next = fields.next();
-            if (fields.hasNext() == false) {
-                // this is the final key - data to remove is here
-                removed = curr.nested.containsKey(next.fieldKey);
-                value = curr.nested.remove(next.fieldKey);
-                container.ctxValues.remove(next.ctxKey);
-                break;
-            }
-            else {
-                if (next.isLastSegment()) {
-                    curr = (Node)curr.nested.get(next.fieldKey);
-                    if (curr == null)
-                        return null;
-                    // The top of the next run
-                    trail.add(new Breadcrumb(next, curr, container));
-                    container = curr;
-                } else {
-                    curr = (Node)curr.nested.get(next.fieldKey);
-                    if (curr == null)
-                        return null;
-                    trail.add(new Breadcrumb(next, curr, null));
-                }
+            if (next.isLastSegment()) {
+                foundNode = foundNode.nested.get(next.fieldKey);
+                if (foundNode == null)
+                    return null;
+                // The top of the next run
+                trail.add(new Breadcrumb(next, foundNode, container));
+                container = foundNode;
+            } else {
+                foundNode = foundNode.nested.get(next.fieldKey);
+                if (foundNode == null)
+                    return null;
+                trail.add(new Breadcrumb(next, foundNode, null));
             }
         }
 
-        if (removed) {
+        Object value = foundNode.setValue(null);
+        if (value != null) {
             // go back up the tree & remove empty containers as we go
             for (int i=trail.size()-1; i>=1; i--) {
                 var b = trail.get(i);
-                if (b.node.nested.isEmpty()) {
+                if (b.node.nested().isEmpty() && b.node.value == null) {
                     trail.get(i-1).node.nested.remove(b.key.fieldKey);
                     if (b.ctxNode != null) {
-                        b.ctxNode.ctxValues.remove(b.key.ctxKey);
+                        b.ctxNode.nestedCtxValues.remove(b.key.ctxKey);
                     }
+                }
+                else {
+                    break;
                 }
             }
         }
@@ -299,19 +310,19 @@ public class FieldStorage {
     private static class NestedCtxMap extends AbstractMap<String, Object> {
         private final Node node;
 
-        public NestedCtxMap(Node node) {
+        private NestedCtxMap(Node node) {
             this.node = node;
         }
 
         @Override
         public int size() {
-            return node.ctxValues.size();
+            return node.nestedCtxValues.size();
         }
 
         @Override
         public Set<Entry<String, Object>> entrySet() {
             return new AbstractSet<>() {
-                final Set<Entry<String, FieldValue>> values = node.ctxValues.entrySet();
+                final Set<Entry<String, FieldValue>> values = node.nestedCtxValues.entrySet();
 
                 @Override
                 public Iterator<Entry<String, Object>> iterator() {

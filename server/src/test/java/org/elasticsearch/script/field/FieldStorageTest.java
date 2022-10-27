@@ -85,15 +85,15 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(s.getCtx("a.b", "c").get(), theInstance(data));
     }
 
-    @Ignore
     public void testValueAndNestedField() {
         FieldStorage s = new FieldStorage();
         s.put(10, "value");
-        s.put(15, "value", "max");
-        s.put(5, "value", "min");
+        s.put(15, "value.max");
+        s.put(5, "value.min");
 
-        // what does this return?
-        s.getField("value");
+        assertThat(s.getCtx("value").get(), equalTo(10));
+        assertThat(s.getCtx("value.min").get(), equalTo(5));
+        assertThat(s.getCtx("value.max").get(), equalTo(15));
     }
 
     public void testNestedCtxMap() {
