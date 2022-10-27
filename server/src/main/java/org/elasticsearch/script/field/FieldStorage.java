@@ -110,7 +110,6 @@ public class FieldStorage {
         }
 
         Object setValue(Object value) {
-            assert value instanceof Node == false;
             Object existing = this.value;
             this.value = value;
             return existing;
@@ -441,7 +440,6 @@ public class FieldStorage {
 
                                 @Override
                                 public Object setValue(Object value) {
-                                    // TODO(stu): handle NestedCtxMap
                                     return entry.getValue().ctxSet(value);
                                 }
                             };
@@ -450,7 +448,6 @@ public class FieldStorage {
                         @Override
                         public void remove() {
                             // TODO(stu): implement
-                            // need to have access to full trail back to root, so can delete nested containers as we go
                         }
                     };
                 }

@@ -177,4 +177,32 @@ public class FieldStorageTest extends ESTestCase {
         assertEquals(-1, match(0, path, candidate + ".")); // final return
         assertEquals(2, match(1, new String[]{"abc", "defh", "ijkl", "lmn"}, "defh.ijkl"));
     }
+
+    @Ignore
+    public void testRehoming() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b", "c");
+
+        Map<?, ?> m = (Map<?, ?>)s.getCtxMap("a");
+        s.put(m, "z");
+    }
+
+    @Ignore
+    public void testIndirectRehoming() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b", "c");
+
+        Map<?, ?> m = (Map<?, ?>)s.getCtxMap("a");
+        s.put(Map.of("i", m), "z");
+    }
+
+    @Ignore
+    public void testCtxDeletion() {
+        // add ctx at a, b.c.d
+        // through fields API delete a.b.c.d through a map access from a.b.c
+        // that needs to delete the fields reference on b pointing to b.c.d, but we don't necessarily have the parent map
+
+        // add map at a.b.c.d
+        // move a.b to a.z
+    }
 }
