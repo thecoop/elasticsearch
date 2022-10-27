@@ -11,6 +11,7 @@ package org.elasticsearch.script.field;
 import org.elasticsearch.test.ESTestCase;
 import org.junit.Ignore;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -137,5 +138,21 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(((Map<?, ?>)s.getCtxMap("a")).keySet(), contains("b.c"));
         s.remove("a", "b.c", "e");
         assertThat(s.getCtxMap("a"), nullValue());
+    }
+
+    public void testUnmanagedMapSearch() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b.c", "d");
+        Map<String, Object> unmanaged = new HashMap<>();
+        Object aObj = s.getCtxMap("a");
+        assertThat(aObj, instanceOf(Map.class));
+        Map<String, Object> aMap = (Map<String, Object>) aObj;
+        aMap.put("b", unmanaged);
+        unmanaged.put("c.d", "bar");
+        Map<String, Object> cMap = new HashMap<>();
+        unmanaged.put("c", cMap);
+        cMap.put("d", "baz");
+
+        assertThat(s.getField("a", "b", "c", "d").toList(), containsInAnyOrder("foo", "bar", "baz"));
     }
 }

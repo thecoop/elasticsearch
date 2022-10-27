@@ -132,7 +132,7 @@ public class FieldStorage {
         // for debugging
         @Override
         public String toString() {
-            return (nestedCtxValues.isEmpty() ? "<internal>" : "{" + nestedCtxValues.keySet() + "}") + " [" + nested.keySet() + "]";
+            return (nestedCtxValues().isEmpty() ? "<internal>" : "{" + nestedCtxValues().keySet() + "}") + " <" + this.value + ">" + " [" + nested().keySet() + "]";
         }
     }
 
@@ -187,10 +187,13 @@ public class FieldStorage {
     }
 
     public void put(Object value, String... field) {
+        put(root, value, field);
+    }
+
+    private static void put(Node container, Object value, String... field) {
         var fields = accessKeys(Arrays.stream(field)).iterator();
 
-        Node container = root;
-        for (Node curr = root;;) {
+        for (Node curr = container;;) {
             CtxKeyTailKey next = fields.next();
             if (fields.hasNext() == false) {
                 // this is the final key - put the data here
@@ -317,6 +320,12 @@ public class FieldStorage {
         @Override
         public int size() {
             return node.nestedCtxValues.size();
+        }
+
+        @Override
+        public Object put(String key, Object value) {
+            FieldStorage.put(node, value, key);
+            return null; // TODO(stu): implement
         }
 
         @Override
