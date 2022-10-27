@@ -83,5 +83,8 @@ public class FieldStorageTest extends ESTestCase {
 
         Object a = s.getCtxMap("a");
         assertThat(a, instanceOf(Map.class));
+        Map<String, Object> aMap = (Map<String, Object>) a;
+        assertThat(aMap.get("b.c"), is("foo"));
+        assertThat(((Map<String, Object>) aMap.get("b")).get("c"), is("qux"));
     }
 }
