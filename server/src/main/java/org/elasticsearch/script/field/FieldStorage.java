@@ -158,8 +158,7 @@ public class FieldStorage {
         assert field.length > 0;
         // ignore prefix here
         List<Node> currentValues = List.of(root);
-        Map<Integer, Node> unmanagedValues = new HashMap<>();
-        List<?> results = new ArrayList<>();
+        List<Object> result = new ArrayList<>();
         for (int i=0; i < field.length; i++) {
             List<Node> nextLevel = new ArrayList<>();
             String f = field[i];
@@ -169,26 +168,24 @@ public class FieldStorage {
             Key max = Key.max(f);
             for (Node node : currentValues) {
                 if (node.value instanceof Map<?, ?> map) {
-
+                    search(result, i, field, (Map<String, Object>) map);
                 }
-                node.nested.subMap(min, true, max, true).values();
+                nextLevel.addAll(node.nested.subMap(min, true, max, true).values());
             }
-            /*
-            currentValues = currentValues
-                .flatMap(n -> n.nested.subMap(min, true, max, true).values().stream());
+            currentValues = nextLevel;
         }
-        return currentValues.map(n -> n.value).filter(Objects::nonNull);
-             */
+        for (Node node : currentValues) {
+            if (node.value != null) {
+                result.add(node.value);
+            }
         }
-        return null;
+        return result;
     }
 
     /**
      * Search for keys matching the substring path[start:] in root, recursively.  Accumulate results
      * in {@param result}.
      */
-    @SuppressWarnings("unchecked")
-    /*
     private static void search(List<Object> result, int start, String[] path, Map<String, Object> root) {
         for (Map.Entry<String, Object> entry : root.entrySet()) {
             int m = match(start, path, entry.getKey());
@@ -196,19 +193,19 @@ public class FieldStorage {
                 result.add(entry.getValue());
             } else if (m > 0) {
                 if (entry.getValue()instanceof Map<?, ?> map) {
-                    search(result, start + m + 1, path, (Map<String, Object>) map);
+                    // TODO(stu): handle entries that are NestedCtxMap
+                    search(result, m + 1, path, (Map<String, Object>) map);
                 }
             }
         }
     }
-    */
 
     /**
      * Match segments from source against candidate.
      * Return:
      *   -1 if source does not match candidate
      *   0 if source exactly matches candidate
-     *   > 0 if candidate fully matches some number of segments.  Returned value is the index of first unmatched segment
+     *   > 0 if candidate fully matches some number of segments.  Returned value is the index of last matched segment
      */
     public static int match(int pathStart, String[] path, String candidate) {
         int candidateStart = 0;
@@ -232,8 +229,8 @@ public class FieldStorage {
                     // full match
                     return 0;
                 }
-                // start with next segment
-                return i + 1;
+                // this is the last segment that can match
+                return i;
             }
             // candidate has more values and we are at a segment boundrary, so next char must be a dot.
             if (candidate.charAt(candidateStart++) != '.') {

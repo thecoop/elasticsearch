@@ -152,7 +152,7 @@ public class FieldStorageTest extends ESTestCase {
         unmanaged.put("c.d", "bar");
         Map<String, Object> cMap = new HashMap<>();
         unmanaged.put("c", cMap);
-        cMap.put("d", "baz");
+        cMap.put("d", "baz"); // this is missing
 
         assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "bar", "baz"));
     }
