@@ -10,14 +10,19 @@ package org.elasticsearch.script.field;
 
 import java.util.AbstractMap;
 import java.util.AbstractSet;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
@@ -194,6 +199,58 @@ public class FieldStorage {
         }
     }
 
+    public Object remove(String... field) {
+        var fields = accessKeys(Arrays.stream(field)).iterator();
+
+        record Breadcrumb(CtxKeyTailKey key, Node node, Node ctxNode) {}
+
+        List<Breadcrumb> trail = new ArrayList<>();
+        Node container = root;
+        trail.add(new Breadcrumb(null, root, null));
+        boolean removed;
+        Object value;
+        for (Node curr = root;;) {
+            CtxKeyTailKey next = fields.next();
+            if (fields.hasNext() == false) {
+                // this is the final key - data to remove is here
+                removed = curr.nested.containsKey(next.fieldKey);
+                value = curr.nested.remove(next.fieldKey);
+                container.ctxValues.remove(next.ctxKey);
+                break;
+            }
+            else {
+                if (next.isLastSegment()) {
+                    curr = (Node)curr.nested.get(next.fieldKey);
+                    if (curr == null)
+                        return null;
+                    // The top of the next run
+                    trail.add(new Breadcrumb(next, curr, container));
+                    container = curr;
+                } else {
+                    curr = (Node)curr.nested.get(next.fieldKey);
+                    if (curr == null)
+                        return null;
+                    trail.add(new Breadcrumb(next, curr, null));
+                }
+            }
+        }
+
+        if (removed) {
+            // go back up the tree & remove empty containers as we go
+            for (int i=trail.size()-1; i>=1; i--) {
+                var b = trail.get(i);
+                if (b.node.nested.isEmpty()) {
+                    trail.get(i-1).node.nested.remove(b.key.fieldKey);
+                    if (b.ctxNode != null) {
+                        b.ctxNode.ctxValues.remove(b.key.ctxKey);
+                    }
+                }
+            }
+        }
+
+        return value;
+    }
+
     private static Stream<CtxKeyTailKey> accessKeys(Stream<String> path) {
         return path
             .flatMap(s -> {
@@ -213,14 +270,23 @@ public class FieldStorage {
      * Note: we could compute this from the ctxKey directly
      */
     private record CtxKeyTailKey(String ctxKey, Key fieldKey) {
+        /**
+         * Constructor for an intermediate prefix key
+         */
         private CtxKeyTailKey(String field)  {
             this(null, new Key(field));
         }
 
+        /**
+         * Constructor for a normal key
+         */
         private CtxKeyTailKey(String ctxKey, String field) {
             this(ctxKey, new Key(field));
         }
 
+        /**
+         * Constructor for a final prefix key, specifying the prefix length
+         */
         private CtxKeyTailKey(String ctxKey, String field, int prefix) {
             this(ctxKey, new Key(field, prefix));
         }
@@ -283,6 +349,7 @@ public class FieldStorage {
                         @Override
                         public void remove() {
                             // TODO(stu): implement
+                            // need to have access to full trail back to root, so can delete nested containers as we go
                         }
                     };
                 }

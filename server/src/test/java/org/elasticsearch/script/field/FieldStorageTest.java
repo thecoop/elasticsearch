@@ -16,9 +16,11 @@ import java.util.Optional;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.theInstance;
 
 public class FieldStorageTest extends ESTestCase {
@@ -63,6 +65,26 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(s.getCtx("a", "c").get(), theInstance(data));
     }
 
+    public void testCtxMultiHomePutGet() {
+        FieldStorage s = new FieldStorage();
+        Map<String, String> data = Map.of("foo", "foo", "bar", "bar");
+        s.put(data, "a.b");
+        s.put(data, "a.c");
+
+        assertThat(s.getCtx("a.b").get(), theInstance(data));
+        assertThat(s.getCtx("a.c").get(), theInstance(data));
+    }
+
+    public void testNestedCtxMultiHomePutGet() {
+        FieldStorage s = new FieldStorage();
+        Map<String, String> data = Map.of("foo", "foo", "bar", "bar");
+        s.put(data, "a", "b.c");
+        s.put(data, "a.b", "c");
+
+        assertThat(s.getCtx("a", "b.c").get(), theInstance(data));
+        assertThat(s.getCtx("a.b", "c").get(), theInstance(data));
+    }
+
     @Ignore
     public void testValueAndNestedField() {
         FieldStorage s = new FieldStorage();
@@ -83,8 +105,37 @@ public class FieldStorageTest extends ESTestCase {
 
         Object a = s.getCtxMap("a");
         assertThat(a, instanceOf(Map.class));
-        Map<String, Object> aMap = (Map<String, Object>) a;
+        Map<?, ?> aMap = (Map<?, ?>) a;
+        assertThat(aMap.keySet(), containsInAnyOrder("b", "b.c"));
         assertThat(aMap.get("b.c"), is("foo"));
-        assertThat(((Map<String, Object>) aMap.get("b")).get("c"), is("qux"));
+        assertThat(((Map<?, ?>) aMap.get("b")).get("c"), is("qux"));
+
+        Object ab = s.getCtxMap("a.b");
+        assertThat(ab, instanceOf(Map.class));
+        Map<?, ?> abMap = (Map<?, ?>) ab;
+        assertThat(abMap.keySet(), contains("c"));
+        assertThat(abMap.get("c"), is("bar"));
+    }
+
+    public void testRemove() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b", "c");
+        s.put("bar", "a.b", "c");
+
+        assertThat(s.remove("a", "b", "c"), is("foo"));
+        assertThat(s.getField("a", "b", "c").toList(), contains("bar"));
+        assertThat(s.remove("a.b", "c"), is("bar"));
+        assertThat(s.getField("a", "b", "c").toList(), empty());
+    }
+
+    public void testNestedRemove() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b.c", "d");
+        s.put("bar", "a", "b.c", "e");
+
+        s.remove("a", "b.c", "d");
+        assertThat(((Map<?, ?>)s.getCtxMap("a")).keySet(), contains("b.c"));
+        s.remove("a", "b.c", "e");
+        assertThat(s.getCtxMap("a"), nullValue());
     }
 }
