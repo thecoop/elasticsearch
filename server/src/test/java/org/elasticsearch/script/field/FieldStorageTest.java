@@ -15,7 +15,9 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.theInstance;
 
@@ -40,13 +42,15 @@ public class FieldStorageTest extends ESTestCase {
 
     public void testPrefixCombination() {
         FieldStorage s = new FieldStorage();
-        s.put("foo", "a", "b.c");
         s.put("bar", "a.b", "c");
+        s.put("foo", "a", "b.c");
+        s.put("baz", "a.b.c");
 
-        assertThat(s.getField("a", "b", "c").toList(), contains("foo", "bar"));
+        assertThat(s.getField("a", "b", "c").toList(), containsInAnyOrder("foo", "bar", "baz"));
         assertThat(s.getCtx("a", "b", "c"), is(Optional.empty()));
         assertThat(s.getCtx("a", "b.c"), equalTo(Optional.of("foo")));
         assertThat(s.getCtx("a.b", "c"), equalTo(Optional.of("bar")));
+        assertThat(s.getCtx("a.b.c"), equalTo(Optional.of("baz")));
     }
 
     public void testMultiHomePutGet() {
@@ -68,5 +72,16 @@ public class FieldStorageTest extends ESTestCase {
 
         // what does this return?
         s.getField("value");
+    }
+
+    public void testNestedCtxMap() {
+        FieldStorage s = new FieldStorage();
+        s.put("bar", "a.b", "c");
+        s.put("foo", "a", "b.c");
+        s.put("baz", "a.b.c");
+        s.put("qux", "a", "b", "c");
+
+        Object a = s.getCtxMap("a");
+        assertThat(a, instanceOf(Map.class));
     }
 }
