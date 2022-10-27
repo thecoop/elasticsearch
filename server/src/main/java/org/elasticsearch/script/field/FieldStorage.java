@@ -155,11 +155,15 @@ public class FieldStorage {
     }
 
     public List<?> getField(String... field) {
+        List<Object> result = new ArrayList<>();
+        return getField(result, root, 0, field);
+    }
+
+    static List<?> getField(List<Object> result, Node root, int start, String[] field) {
         assert field.length > 0;
         // ignore prefix here
         List<Node> currentValues = List.of(root);
-        List<Object> result = new ArrayList<>();
-        for (int i=0; i < field.length; i++) {
+        for (int i=start; i < field.length; i++) {
             List<Node> nextLevel = new ArrayList<>();
             String f = field[i];
             if (f.contains(".")) throw new IllegalArgumentException();
@@ -193,8 +197,12 @@ public class FieldStorage {
                 result.add(entry.getValue());
             } else if (m > 0) {
                 if (entry.getValue()instanceof Map<?, ?> map) {
-                    // TODO(stu): handle entries that are NestedCtxMap
-                    search(result, m + 1, path, (Map<String, Object>) map);
+                    if (entry.getValue() instanceof NestedCtxMap nested) {
+                        getField(result, nested.node, m + 1, path);
+                    } else {
+                        // TODO(stu): handle entries that are NestedCtxMap
+                        search(result, m + 1, path, (Map<String, Object>) map);
+                    }
                 }
             }
         }

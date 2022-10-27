@@ -157,6 +157,19 @@ public class FieldStorageTest extends ESTestCase {
         assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "bar", "baz"));
     }
 
+    public void testUnmanagedMapWithManagedChildSearch() {
+        FieldStorage s = new FieldStorage();
+        s.put("foo", "a", "b.c", "d");
+        Map<String, Object> unmanaged = new HashMap<>();
+        Object aObj = s.getCtxMap("a");
+        assertThat(aObj, instanceOf(Map.class));
+        Map<String, Object> aMap = (Map<String, Object>) aObj;
+        aMap.put("b", unmanaged);
+        unmanaged.put("c", ((Map<String, Object>) s.getCtxMap("a")).get("b.c"));
+
+        assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "foo"));
+    }
+
     public void testMatch() {
         String candidate = "abcd.efg";
         String[] path = new String[]{"abcd", "efg"};
