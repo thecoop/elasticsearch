@@ -279,27 +279,6 @@ public class FieldStorage {
         return -1;
     }
 
-    public Stream<?> findAllWithPrefix(String prefix) {
-        String[] path = prefix.split("\\.");
-        Node anchorNode = root;
-        if (path.length > 1) {
-            var fields = accessKeys(Arrays.stream(path, 0, path.length - 1)).iterator();
-
-            do {
-                anchorNode = anchorNode.nested.get(fields.next().fieldKey);
-            } while (fields.hasNext() && anchorNode != null);
-        }
-        if (anchorNode == null) return Stream.empty();
-
-        String purePrefix = path[path.length - 1];
-        // and recursively iterate through all nested child maps too...
-        return anchorNode.nested.subMap(Key.min(purePrefix), Key.max(purePrefix + Character.MAX_VALUE))
-            .values()
-            .stream()
-            .map(n -> n.value)
-            .filter(Objects::nonNull);
-    }
-
     public void put(Object value, String... field) {
         put(root, value, field);
     }
