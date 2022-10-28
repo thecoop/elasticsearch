@@ -117,10 +117,19 @@ public class LittleMapStorage {
                         (Map<String, ?>)m);
                 }
                 else if (o instanceof Node n) {
-                    searchNodes(
-                        candidateNodes.subList(i+1, candidateNodes.size()),
-                        field.subList(i, field.size()),
-                        n.nested().subMap(min, true, max, true));
+                    if (n.value instanceof Map<?, ?> nm) {
+                        // external map
+                        searchNodes(
+                            candidateNodes.subList(i+1, candidateNodes.size()),
+                            field.subList(i, field.size()),
+                            (Map<String, ?>)nm);
+                    }
+                    else {
+                        searchNodes(
+                            candidateNodes.subList(i + 1, candidateNodes.size()),
+                            field.subList(i, field.size()),
+                            n.nested().subMap(min, true, max, true));
+                    }
                 }
             }
         }
