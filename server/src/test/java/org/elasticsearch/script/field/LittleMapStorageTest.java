@@ -89,7 +89,7 @@ public class LittleMapStorageTest extends ESTestCase {
         assertThat(s.getCtx("value.min").get(), equalTo(5));
         assertThat(s.getCtx("value.max").get(), equalTo(15));
     }
-/*
+
     public void testNestedCtxMap() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("bar", "a.b", "c");
@@ -110,7 +110,7 @@ public class LittleMapStorageTest extends ESTestCase {
         assertThat(abMap.keySet(), contains("c"));
         assertThat(abMap.get("c"), is("bar"));
     }
-
+/*
     public void testRemove() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("foo", "a", "b", "c");
@@ -132,7 +132,7 @@ public class LittleMapStorageTest extends ESTestCase {
         s.remove("a", "b.c", "e");
         assertThat(s.getCtxMap("a"), nullValue());
     }
-
+*/
     public void testUnmanagedMapSearch() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("foo", "a", "b.c", "d");
@@ -162,14 +162,6 @@ public class LittleMapStorageTest extends ESTestCase {
         assertThat(s.getField("a", "b", "c", "d"), containsInAnyOrder("foo", "foo"));
     }
 
-    public void testMatch() {
-        String candidate = "abcd.efg";
-        String[] path = new String[]{"abcd", "efg"};
-        assertEquals(0, match(0, path, candidate));
-        assertEquals(-1, match(0, path, candidate + ".")); // final return
-        assertEquals(2, match(1, new String[]{"abc", "defh", "ijkl", "lmn"}, "defh.ijkl"));
-    }
-
     public void testRehoming() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("foo", "a", "b", "c");
@@ -192,14 +184,11 @@ public class LittleMapStorageTest extends ESTestCase {
     }
 
     public void testCtxDeletion() {
-        LittleMapStorage s = new LittleMapStorage();
-        s.put("foo", "a", "b.c.d", "e");
-        System.err.println(s.remove("a", "b", "c"));
         // add ctx at a, b.c.d
         // through fields API delete a.b.c.d through a map access from a.b.c
         // that needs to delete the fields reference on b pointing to b.c.d, but we don't necessarily have the parent map
 
         // add map at a.b.c.d
         // move a.b to a.z
-    }*/
+    }
 }

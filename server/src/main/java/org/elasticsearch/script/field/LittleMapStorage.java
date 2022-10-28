@@ -8,16 +8,21 @@
 
 package org.elasticsearch.script.field;
 
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class LittleMapStorage {
 
@@ -34,6 +39,26 @@ public class LittleMapStorage {
                 nested = new TreeMap<>();
             }
             return nested.computeIfAbsent(key, k -> new Node());
+        }
+
+        /**
+         * Map the key to an existing {@link Node}.  This only occurs during rehoming via ctx access.
+         */
+        void setContainer(String key, Node value) {
+            if (nested == null) {
+                nested = new TreeMap<>();
+            }
+            nested.put(key, value);
+        }
+
+        Object ctxGet() {
+            // TODO: disambiguate better
+            if (value != null) {
+                return value;
+            }
+            else {
+                return new NestedCtxMap(this);
+            }
         }
 
         private Object setValue(Object value) {
@@ -74,7 +99,7 @@ public class LittleMapStorage {
 
     static List<?> getField(List<Object> result, Node root, List<String> field) {
         assert field.size() > 0;
-        List<List<Node>> candidateNodes = field.stream().<List<Node>>map(s -> new ArrayList<>()).collect(Collectors.toList());
+        List<List<Object>> candidateNodes = field.stream().<List<Object>>map(s -> new ArrayList<>()).collect(Collectors.toList());
         candidateNodes.add(0, List.of(root));   // starting node
 
         for (int i = 0; i < field.size(); i++) {
@@ -83,32 +108,38 @@ public class LittleMapStorage {
 
             String min = f;
             String max = f + Character.MAX_VALUE;
-            for (Node node : candidateNodes.get(i)) {
-                // Unmanaged map
-                if (node.value instanceof Map<?, ?> map) {
-                    //searchDirect(result, i, field, (Map<String, ?>) map);
-                }
-                if (node.nested != null) {
+            for (Object o : candidateNodes.get(i)) {
+                if (o instanceof Map<?, ?> m) {
+                    // external map
                     searchNodes(
                         candidateNodes.subList(i+1, candidateNodes.size()),
                         field.subList(i, field.size()),
-                        node.nested.subMap(min, true, max, true));
+                        (Map<String, ?>)m);
+                }
+                else if (o instanceof Node n) {
+                    searchNodes(
+                        candidateNodes.subList(i+1, candidateNodes.size()),
+                        field.subList(i, field.size()),
+                        n.nested().subMap(min, true, max, true));
                 }
             }
         }
-        for (Node node : candidateNodes.get(candidateNodes.size()-1)) {
-            if (node.value != null) {
-                result.add(node.value);
-            }
-        }
+
+        candidateNodes.get(candidateNodes.size()-1).stream()
+            .flatMap(o -> o instanceof Node n ? Optional.ofNullable(n.value).stream() : Stream.of(o))
+            .forEach(result::add);
         return result;
+    }
+
+    public Object getCtxMap(String key) {
+        return root.getContainer(key).ctxGet();
     }
 
     /**
      * Search for keys matching the substring path[start:] in root, and add them to result in the right place
      */
-    private static void searchNodes(List<List<Node>> result, List<String> path, Map<String, Node> root) {
-        for (Map.Entry<String, Node> entry : root.entrySet()) {
+    private static void searchNodes(List<List<Object>> result, List<String> path, Map<String, ?> node) {
+        for (Map.Entry<String, ?> entry : node.entrySet()) {
             int m = match(path, entry.getKey());
             result.get(m).add(entry.getValue());
         }
@@ -151,10 +182,90 @@ public class LittleMapStorage {
     }
 
     public Object put(Object value, String... field) {
-        Node curr = root;
-        for (String f : field) {
+        return put(root, value, field);
+    }
+
+    static Object put(Node curr, Object value, String... field) {
+        for (int i = 0; i < field.length-1; i++) {
+            String f = field[i];
             curr = curr.getContainer(f);
         }
-        return curr.setValue(value);
+        if (value instanceof NestedCtxMap nm) {
+            curr.setContainer(field[field.length-1], nm.node);
+            return null;
+        }
+        else {
+            return curr.getContainer(field[field.length-1]).setValue(value);
+        }
+    }
+
+    private static class NestedCtxMap extends AbstractMap<String, Object> {
+        private final Node node;
+
+        private NestedCtxMap(Node node) {
+            this.node = node;
+        }
+
+        @Override
+        public int size() {
+            return node.nested().size();
+        }
+
+        @Override
+        public Object put(String key, Object value) {
+            return LittleMapStorage.put(node, value, key);
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return new AbstractSet<>() {
+                final Set<Entry<String, Node>> values = node.nested().entrySet();
+
+                @Override
+                public Iterator<Entry<String, Object>> iterator() {
+                    return new Iterator<>() {
+
+                        Iterator<Entry<String, Node>> it = values.iterator();
+
+                        @Override
+                        public boolean hasNext() {
+                            return it.hasNext();
+                        }
+
+                        @Override
+                        public Entry<String, Object> next() {
+                            Entry<String, Node> entry = it.next();
+                            return new Entry<String, Object>() {
+                                @Override
+                                public String getKey() {
+                                    return entry.getKey();
+                                }
+
+                                @Override
+                                public Object getValue() {
+                                    return entry.getValue().ctxGet();
+                                }
+
+                                @Override
+                                public Object setValue(Object value) {
+                                    // TODO(stu): untested
+                                    return null;
+                                }
+                            };
+                        }
+
+                        @Override
+                        public void remove() {
+                            // TODO(stu): implement
+                        }
+                    };
+                }
+
+                @Override
+                public int size() {
+                    return NestedCtxMap.this.size();
+                }
+            };
+        }
     }
 }
