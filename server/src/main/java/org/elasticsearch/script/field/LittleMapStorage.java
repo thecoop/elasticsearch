@@ -78,6 +78,10 @@ public class LittleMapStorage {
                 + nested().keySet()
                 + "]";
         }
+
+        public boolean isEmpty() {
+            return this.value == null && nested().isEmpty();
+        }
     }
 
     private final Node root = new Node();
@@ -90,6 +94,10 @@ public class LittleMapStorage {
             if (curr == null) return Optional.empty();
         }
         return Optional.ofNullable(curr.value);
+    }
+
+    public Object getCtxMap(String key) {
+        return root.getContainer(key).ctxGet();
     }
 
     public List<?> getField(String... field) {
@@ -140,10 +148,6 @@ public class LittleMapStorage {
         return result;
     }
 
-    public Object getCtxMap(String key) {
-        return root.getContainer(key).ctxGet();
-    }
-
     /**
      * Search for keys matching the substring path[start:] in root, and add them to result in the right place
      */
@@ -151,6 +155,62 @@ public class LittleMapStorage {
         for (Map.Entry<String, ?> entry : node.entrySet()) {
             int m = match(path, entry.getKey());
             result.get(m).add(entry.getValue());
+        }
+    }
+
+    /**
+     * Remove fields for the fields interface.  The field arguments must not have dots.
+     */
+    public void remove(String... field) {
+        removeViaNode(root, Arrays.asList(field));
+    }
+
+    static void removeViaNode(Node node, List<String> field) {
+        assert field.size() > 0;
+
+        for (int i = 0; i < field.size(); i++) {
+            String f = field.get(i);
+            if (f.contains(".")) throw new IllegalArgumentException();
+
+            String min = f;
+            String max = f + Character.MAX_VALUE;
+
+            if (node.value instanceof Map<?, ?> external) {
+                removeViaMap((Map<String, ?>)external, field);
+                if (external.isEmpty()) {
+                    node.value = null;
+                }
+            }
+            removeViaMap(node.nested().subMap(min, true, max, true), field.subList(i, field.size()));
+        }
+    }
+
+    static void removeViaMap(Map<String, ?> map, List<String> field) {
+        for (Iterator<? extends Map.Entry<String, ?>> it = map.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<String, ?> entry = it.next();
+            List<String> unmatched = match2(field, entry.getKey());
+            if (unmatched == null) {
+                continue;
+            }
+            boolean remove = false;
+            if (entry.getValue() instanceof Node node) {
+                if (unmatched.isEmpty()) {
+                    node.value = null;
+                } else {
+                    removeViaNode(node, unmatched);
+                }
+                remove = node.isEmpty();
+            } else if (entry.getValue() instanceof Map<?, ?> subMap) {
+                if (unmatched.isEmpty()) {
+                    remove = true;
+                } else {
+                    removeViaMap((Map<String, ?>) subMap, unmatched);
+                    remove = subMap.isEmpty();
+                }
+            }
+            if (remove) {
+                it.remove();
+            }
         }
     }
 
@@ -170,10 +230,8 @@ public class LittleMapStorage {
                 // candidate too short, assumes no dots in path
                 return -1;
             }
-            // pathSegment is <= candidate length
             for (int j = 0; j < pathSegment.length(); j++) {
                 if (pathSegment.charAt(j) != candidate.charAt(candidateStart + j)) {
-                    // different character
                     return -1;
                 }
             }
@@ -188,6 +246,40 @@ public class LittleMapStorage {
         }
         // matched all path segments but candidate had extra values (starting with dot due to last conditional)
         return -1;
+    }
+
+    /**
+     * Match segments from source against candidate.
+     * Return:
+     *   null if source does not match candidate
+     *   0 if source exactly matches candidate
+     *   > 0 if candidate fully matches some number of segments.  Returned value is the index of last matched segment
+     */
+    public static List<String> match2(List<String> path, String candidate) {
+        int candidateStart = 0;
+        for (int i = 0; i < path.size(); i++) {
+            String pathSegment = path.get(i);
+            int maxMatchLength = candidate.length() - candidateStart;
+            if (pathSegment.length() > maxMatchLength) {
+                // candidate too short, assumes no dots in path
+                return null;
+            }
+            for (int j = 0; j < pathSegment.length(); j++) {
+                if (pathSegment.charAt(j) != candidate.charAt(candidateStart + j)) {
+                    return null;
+                }
+            }
+            candidateStart += pathSegment.length();
+            if (candidateStart == candidate.length()) {
+                return path.subList(i + 1, path.size());
+            }
+            // candidate has more values and we are at a segment boundary, so next char must be a dot.
+            if (candidate.charAt(candidateStart++) != '.') {
+                return null;
+            }
+        }
+        // matched all path segments but candidate had extra values (starting with dot due to last conditional)
+        return null;
     }
 
     public Object put(Object value, String... field) {
@@ -244,7 +336,7 @@ public class LittleMapStorage {
                         @Override
                         public Entry<String, Object> next() {
                             Entry<String, Node> entry = it.next();
-                            return new Entry<String, Object>() {
+                            return new Entry<>() {
                                 @Override
                                 public String getKey() {
                                     return entry.getKey();
@@ -265,7 +357,7 @@ public class LittleMapStorage {
 
                         @Override
                         public void remove() {
-                            // TODO(stu): implement
+                            it.remove();
                         }
                     };
                 }

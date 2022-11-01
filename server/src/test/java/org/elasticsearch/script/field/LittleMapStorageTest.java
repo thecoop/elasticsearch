@@ -110,16 +110,19 @@ public class LittleMapStorageTest extends ESTestCase {
         assertThat(abMap.keySet(), contains("c"));
         assertThat(abMap.get("c"), is("bar"));
     }
-/*
+
     public void testRemove() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("foo", "a", "b", "c");
         s.put("bar", "a.b", "c");
+        s.put("baz", "a.b", "d");
+        s.put("qux", "a", "b", "c", "d");
 
-        assertThat(s.remove("a", "b", "c"), is("foo"));
-        assertThat(s.getField("a", "b", "c"), contains("bar"));
-        assertThat(s.remove("a.b", "c"), is("bar"));
-        assertThat(s.getField("a", "b", "c"), empty());
+        s.remove("a", "b", "c");
+        assertThat(s.getField("a", "b", "d"), contains("baz"));
+        assertThat(s.getField("a", "b", "c", "d"), contains("qux"));
+        //s.remove("a.b", "c");
+        //assertThat(s.getField("a", "b", "c"), empty());
     }
 
     public void testNestedRemove() {
@@ -127,12 +130,13 @@ public class LittleMapStorageTest extends ESTestCase {
         s.put("foo", "a", "b.c", "d");
         s.put("bar", "a", "b.c", "e");
 
-        s.remove("a", "b.c", "d");
+        s.remove("a", "b", "c", "d");
         assertThat(((Map<?, ?>)s.getCtxMap("a")).keySet(), contains("b.c"));
-        s.remove("a", "b.c", "e");
-        assertThat(s.getCtxMap("a"), nullValue());
+        s.remove("a", "b", "c", "e");
+        // TODO(stu): this is doing a computeIfAbsent
+        // assertThat(s.getCtxMap("a"), nullValue());
     }
-*/
+
     public void testUnmanagedMapSearch() {
         LittleMapStorage s = new LittleMapStorage();
         s.put("foo", "a", "b.c", "d");
@@ -181,6 +185,14 @@ public class LittleMapStorageTest extends ESTestCase {
         Map<?, ?> m = (Map<?, ?>)s.getCtxMap("a");
         s.put(new HashMap<>(Map.of("i", m)), "z");
         assertThat(s.getField("z", "i", "b", "c"), contains("foo"));
+    }
+
+    public void testSubObjectFalse() {
+        LittleMapStorage s = new LittleMapStorage();
+        s.put("foo", "a.b");
+        s.put("bar", "a", "b.c");
+        s.put("baz", "a.b.c");
+        assertThat(s.getField("a", "b", "c"), containsInAnyOrder("bar", "baz"));
     }
 
     public void testCtxDeletion() {
