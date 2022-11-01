@@ -40,6 +40,13 @@ public class ListSortedMapTest extends ESTestCase {
         assertThat(m.get(5), nullValue());
     }
 
+    public void testRemove() {
+        ListSortedMap<Integer, Integer> m = new ListSortedMap<>(IntStream.range(0, 4).boxed().collect(Collectors.toMap(i -> i*2, i -> i*2)));
+
+        m.remove(2);
+        assertThat(m.entrySet(), contains(Map.entry(0, 0), Map.entry(4, 4), Map.entry(6, 6)));
+    }
+
     public void testSubMap() {
         ListSortedMap<Integer, Integer> m = new ListSortedMap<>(IntStream.range(0, 10).boxed().collect(Collectors.toMap(i -> i*2, i -> i*2)));
 
