@@ -186,6 +186,7 @@ public class FieldStorage {
         return getField(result, root, 0, field);
     }
 
+    @SuppressWarnings("unchecked")
     static List<?> getField(List<Object> result, Node root, int start, String[] field) {
         assert field.length > 0;
         // ignore prefix here
@@ -220,6 +221,7 @@ public class FieldStorage {
      * Search for keys matching the substring path[start:] in root, recursively.  Accumulate results
      * in {@param result}.
      */
+    @SuppressWarnings("unchecked")
     private static void search(List<Object> result, int start, String[] path, Map<String, Object> root) {
         for (Map.Entry<String, Object> entry : root.entrySet()) {
             int m = match(start, path, entry.getKey());

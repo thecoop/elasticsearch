@@ -500,7 +500,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean keyWithinBounds(Object o, Object[] lowerBound, boolean lowerInclusive, Object[] upperBound, boolean upperInclusive) {
         Comparator c = comparator();
         if (c == null) c = Comparator.naturalOrder();
@@ -699,6 +699,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return headSet(toElement, false);
         }
 
+        @SuppressWarnings("unchecked")
         private SortedSet<K> headSet(K toElement, boolean inclusive) {
             Object[] higherBound = new Object[] { this.upperBound != null
                 ? Collections.min(Arrays.asList((K)this.upperBound[0], toElement), comparator())
@@ -711,6 +712,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return tailSet(fromElement, true);
         }
 
+        @SuppressWarnings("unchecked")
         private SortedSet<K> tailSet(K fromElement, boolean inclusive) {
             Object[] lowerBound = new Object[] { this.lowerBound != null
                 ? Collections.max(Arrays.asList((K)this.lowerBound[0], fromElement), comparator())
@@ -723,6 +725,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return subSet(fromElement, true, toElement, false);
         }
 
+        @SuppressWarnings("unchecked")
         private SortedSet<K> subSet(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
             Object[] lowerBound = new Object[]{this.lowerBound != null
                 ? Collections.max(Arrays.asList((K) this.lowerBound[0], fromElement), comparator())
@@ -1211,6 +1214,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return headMap(toElement, false);
         }
 
+        @SuppressWarnings("unchecked")
         public NavigableMap<K, V> headMap(K toElement, boolean inclusive) {
             Object[] higherBound = new Object[] { this.upperBound != null
                 ? Collections.min(Arrays.asList((K)this.upperBound[0], toElement), comparator())
@@ -1223,6 +1227,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return tailMap(fromElement, true);
         }
 
+        @SuppressWarnings("unchecked")
         public NavigableMap<K, V> tailMap(K fromElement, boolean inclusive) {
             Object[] lowerBound = new Object[] { this.lowerBound != null
                 ? Collections.max(Arrays.asList((K)this.lowerBound[0], fromElement), comparator())
@@ -1235,6 +1240,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return subMap(fromElement, true, toElement, false);
         }
 
+        @SuppressWarnings("unchecked")
         public NavigableMap<K, V> subMap(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
             Object[] lowerBound = new Object[]{this.lowerBound != null
                 ? Collections.max(Arrays.asList((K) this.lowerBound[0], fromElement), comparator())

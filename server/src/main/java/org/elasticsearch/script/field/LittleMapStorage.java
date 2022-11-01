@@ -104,6 +104,7 @@ public class LittleMapStorage {
         return getField(result, root, Arrays.asList(field));
     }
 
+    @SuppressWarnings("unchecked")
     static List<?> getField(List<Object> result, Node root, List<String> field) {
         assert field.size() > 0;
         List<List<Object>> candidateNodes = field.stream().<List<Object>>map(s -> new ArrayList<>()).collect(Collectors.toList());
@@ -157,6 +158,61 @@ public class LittleMapStorage {
         }
     }
 
+    public void removePath(String... path) {
+        removePathViaNode(root, Arrays.asList(path));
+    }
+
+    @SuppressWarnings("unchecked")
+    static void removePathViaNode(Node node, List<String> field) {
+        assert field.size() > 0;
+
+        for (int i = 0; i < field.size(); i++) {
+            String f = field.get(i);
+
+            String min = f;
+            String max = f + Character.MAX_VALUE;
+
+            if (node.value instanceof Map<?, ?> external) {
+                removePathViaMap((Map<String, ?>)external, field);
+                if (external.isEmpty()) {
+                    node.value = null;
+                }
+            }
+            removePathViaMap(node.nested().subMap(min, true, max, true), field.subList(i, field.size()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static void removePathViaMap(Map<String, ?> map, List<String> field) {
+        String segment = field.get(0);
+        field = field.subList(1, field.size());
+        for (Iterator<? extends Map.Entry<String, ?>> it = map.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<String, ?> entry = it.next();
+            if (segment.equals(entry.getKey()) == false) {
+                continue;
+            }
+            boolean remove = false;
+            if (entry.getValue() instanceof Node node) {
+                if (field.isEmpty()) {
+                    node.value = null;
+                } else {
+                    removePathViaNode(node, field);
+                }
+                remove = node.isEmpty();
+            } else if (entry.getValue() instanceof Map<?, ?> subMap) {
+                if (field.isEmpty()) {
+                    remove = true;
+                } else {
+                    removePathViaMap((Map<String, ?>) subMap, field);
+                    remove = subMap.isEmpty();
+                }
+            }
+            if (remove) {
+                it.remove();
+            }
+        }
+    }
+
     /**
      * Remove fields for the fields interface.  The field arguments must not have dots.
      */
@@ -164,6 +220,7 @@ public class LittleMapStorage {
         removeViaNode(root, Arrays.asList(field));
     }
 
+    @SuppressWarnings("unchecked")
     static void removeViaNode(Node node, List<String> field) {
         assert field.size() > 0;
 
@@ -184,6 +241,7 @@ public class LittleMapStorage {
         }
     }
 
+    @SuppressWarnings("unchecked")
     static void removeViaMap(Map<String, ?> map, List<String> field) {
         for (Iterator<? extends Map.Entry<String, ?>> it = map.entrySet().iterator(); it.hasNext();) {
             Map.Entry<String, ?> entry = it.next();
