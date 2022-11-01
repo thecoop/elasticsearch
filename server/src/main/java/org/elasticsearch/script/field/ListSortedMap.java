@@ -18,6 +18,8 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.NavigableSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
@@ -30,7 +32,7 @@ import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 
-class ListSortedMap<K, V> implements SortedMap<K, V> {
+class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     private ArrayList<K> keys;
     private ArrayList<V> values;
@@ -395,10 +397,78 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
     }
 
     @Override
+    public Entry<K, V> firstEntry() {
+        if (keys.isEmpty())
+            return null;
+        return new MapEntry(0);
+    }
+
+    @Override
+    public Entry<K, V> pollFirstEntry() {
+        if (keys.isEmpty())
+            return null;
+        return Map.entry(keys.remove(0), values.remove(0));
+    }
+
+    @Override
+    public K floorKey(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Entry<K, V> floorEntry(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public K lowerKey(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Entry<K, V> lowerEntry(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public K lastKey() {
         if (keys.isEmpty())
             throw new NoSuchElementException();
         return keys.get(keys.size()-1);
+    }
+
+    @Override
+    public Entry<K, V> lastEntry() {
+        if (keys.isEmpty())
+            return null;
+        return new MapEntry(keys.size()-1);
+    }
+
+    @Override
+    public Entry<K, V> pollLastEntry() {
+        if (keys.isEmpty())
+            return null;
+        return Map.entry(keys.remove(keys.size()-1), values.remove(values.size()-1));
+    }
+
+    @Override
+    public K ceilingKey(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Entry<K, V> ceilingEntry(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public K higherKey(K key) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Entry<K, V> higherEntry(K key) {
+        throw new UnsupportedOperationException();
     }
 
     private abstract class MapIterator<T> implements Iterator<T> {
@@ -539,6 +609,16 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
     @Override
     public SortedSet<K> keySet() {
         return new KeySet(null, false, null, false);
+    }
+
+    @Override
+    public NavigableSet<K> navigableKeySet() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public NavigableSet<K> descendingKeySet() {
+        throw new UnsupportedOperationException();
     }
 
     private class KeyIterator extends MapIterator<K> {
@@ -803,33 +883,38 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
     }
 
     @Override
-    public SortedMap<K, V> headMap(K toKey) {
+    public NavigableMap<K, V> headMap(K toKey) {
         return headMap(toKey, false);
     }
 
-    public SortedMap<K, V> headMap(K toKey, boolean inclusive) {
+    public NavigableMap<K, V> headMap(K toKey, boolean inclusive) {
         return new SubMap(null, false, new Object[] { toKey }, inclusive);
     }
 
     @Override
-    public SortedMap<K, V> tailMap(K fromKey) {
+    public NavigableMap<K, V> tailMap(K fromKey) {
         return tailMap(fromKey, true);
     }
 
-    public SortedMap<K, V> tailMap(K fromKey, boolean inclusive) {
+    public NavigableMap<K, V> tailMap(K fromKey, boolean inclusive) {
         return new SubMap(new Object[] { fromKey }, inclusive, null, false);
     }
 
     @Override
-    public SortedMap<K, V> subMap(K fromKey, K toKey) {
+    public NavigableMap<K, V> subMap(K fromKey, K toKey) {
         return subMap(fromKey, true, toKey, false);
     }
 
-    public SortedMap<K, V> subMap(K fromKey, boolean fromInclusive, K toKey, boolean toInclusive) {
+    public NavigableMap<K, V> subMap(K fromKey, boolean fromInclusive, K toKey, boolean toInclusive) {
         return new SubMap(new Object[] { fromKey }, fromInclusive, new Object[] { toKey }, toInclusive);
     }
 
-    private class SubMap extends AbstractMap<K, V> implements SortedMap<K, V> {
+    @Override
+    public NavigableMap<K, V> descendingMap() {
+        throw new UnsupportedOperationException();
+    }
+
+    private class SubMap extends AbstractMap<K, V> implements NavigableMap<K, V> {
         // arrays to disambiguate between a null bound & no bound at all
         private final Object[] lowerBound;
         private final boolean lowerInclusive;
@@ -1012,6 +1097,44 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
         }
 
         @Override
+        public Entry<K, V> firstEntry() {
+            int lower = lowerIndex();
+            int upper = upperIndex();
+            if (lower == upper)
+                return null;
+            return new MapEntry(lower);
+        }
+
+        @Override
+        public Entry<K, V> pollFirstEntry() {
+            int lower = lowerIndex();
+            int upper = upperIndex();
+            if (lower == upper)
+                return null;
+            return Map.entry(keys.remove(lower), values.remove(lower));
+        }
+
+        @Override
+        public K floorKey(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Entry<K, V> floorEntry(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public K lowerKey(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Entry<K, V> lowerEntry(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public K lastKey() {
             int lower = lowerIndex();
             int upper = upperIndex();
@@ -1021,8 +1144,56 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
         }
 
         @Override
+        public Entry<K, V> lastEntry() {
+            int lower = lowerIndex();
+            int upper = upperIndex();
+            if (lower == upper)
+                throw new NoSuchElementException();
+            return new MapEntry(upper-1);
+        }
+
+        @Override
+        public Entry<K, V> pollLastEntry() {
+            int lower = lowerIndex();
+            int upper = upperIndex();
+            if (lower == upper)
+                return null;
+            return Map.entry(keys.remove(upper-1), values.remove(upper-1));
+        }
+
+        @Override
+        public K ceilingKey(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Entry<K, V> ceilingEntry(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public K higherKey(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Entry<K, V> higherEntry(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Set<K> keySet() {
             return new KeySet(lowerBound, lowerInclusive, upperBound, upperInclusive);
+        }
+
+        @Override
+        public NavigableSet<K> navigableKeySet() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public NavigableSet<K> descendingKeySet() {
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -1036,11 +1207,11 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
         }
 
         @Override
-        public SortedMap<K, V> headMap(K toElement) {
+        public NavigableMap<K, V> headMap(K toElement) {
             return headMap(toElement, false);
         }
 
-        private SortedMap<K, V> headMap(K toElement, boolean inclusive) {
+        public NavigableMap<K, V> headMap(K toElement, boolean inclusive) {
             Object[] higherBound = new Object[] { this.upperBound != null
                 ? Collections.min(Arrays.asList((K)this.upperBound[0], toElement), comparator())
                 : toElement };
@@ -1048,11 +1219,11 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
         }
 
         @Override
-        public SortedMap<K, V> tailMap(K fromElement) {
+        public NavigableMap<K, V> tailMap(K fromElement) {
             return tailMap(fromElement, true);
         }
 
-        private SortedMap<K, V> tailMap(K fromElement, boolean inclusive) {
+        public NavigableMap<K, V> tailMap(K fromElement, boolean inclusive) {
             Object[] lowerBound = new Object[] { this.lowerBound != null
                 ? Collections.max(Arrays.asList((K)this.lowerBound[0], fromElement), comparator())
                 : fromElement };
@@ -1060,11 +1231,11 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
         }
 
         @Override
-        public SortedMap<K, V> subMap(K fromElement, K toElement) {
+        public NavigableMap<K, V> subMap(K fromElement, K toElement) {
             return subMap(fromElement, true, toElement, false);
         }
 
-        private SortedMap<K, V> subMap(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
+        public NavigableMap<K, V> subMap(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
             Object[] lowerBound = new Object[]{this.lowerBound != null
                 ? Collections.max(Arrays.asList((K) this.lowerBound[0], fromElement), comparator())
                 : fromElement};
@@ -1073,6 +1244,11 @@ class ListSortedMap<K, V> implements SortedMap<K, V> {
                 : toElement};
 
             return new SubMap(lowerBound, fromInclusive, upperBound, toInclusive);
+        }
+
+        @Override
+        public NavigableMap<K, V> descendingMap() {
+            throw new UnsupportedOperationException();
         }
     }
 }

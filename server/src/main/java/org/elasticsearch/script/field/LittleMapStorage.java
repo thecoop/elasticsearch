@@ -20,7 +20,6 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -36,7 +35,7 @@ public class LittleMapStorage {
 
         private Node getContainer(String key) {
             if (nested == null) {
-                nested = new TreeMap<>();
+                nested = new ListSortedMap<>();
             }
             return nested.computeIfAbsent(key, k -> new Node());
         }
@@ -46,7 +45,7 @@ public class LittleMapStorage {
          */
         void setContainer(String key, Node value) {
             if (nested == null) {
-                nested = new TreeMap<>();
+                nested = new ListSortedMap<>();
             }
             nested.put(key, value);
         }
