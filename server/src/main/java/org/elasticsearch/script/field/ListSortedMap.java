@@ -412,22 +412,32 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     @Override
     public K floorKey(K key) {
-        throw new UnsupportedOperationException();
+        Entry<K, V> entry = floorEntry(key);
+        return entry != null ? entry.getKey() : null;
     }
 
     @Override
     public Entry<K, V> floorEntry(K key) {
-        throw new UnsupportedOperationException();
+        int index = findIndex(key);
+        if (index < 0) {
+            index = -(index + 1) - 1;
+        }
+        return index >= 0 ? new MapEntry(index) : null;
     }
 
     @Override
     public K lowerKey(K key) {
-        throw new UnsupportedOperationException();
+        Entry<K, V> entry = lowerEntry(key);
+        return entry != null ? entry.getKey() : null;
     }
 
     @Override
     public Entry<K, V> lowerEntry(K key) {
-        throw new UnsupportedOperationException();
+        int index = findIndex(key);
+        if (index < 0) {
+            index = -(index + 1);
+        }
+        return index >= 1 ? new MapEntry(index-1) : null;
     }
 
     @Override
@@ -453,22 +463,35 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     @Override
     public K ceilingKey(K key) {
-        throw new UnsupportedOperationException();
+        Entry<K, V> entry = ceilingEntry(key);
+        return entry != null ? entry.getKey() : null;
     }
 
     @Override
     public Entry<K, V> ceilingEntry(K key) {
-        throw new UnsupportedOperationException();
+        int index = findIndex(key);
+        if (index < 0) {
+            index = -(index + 1);
+        }
+        return index < keys.size() ? new MapEntry(index) : null;
     }
 
     @Override
     public K higherKey(K key) {
-        throw new UnsupportedOperationException();
+        Entry<K, V> entry = higherEntry(key);
+        return entry != null ? entry.getKey() : null;
     }
 
     @Override
     public Entry<K, V> higherEntry(K key) {
-        throw new UnsupportedOperationException();
+        int index = findIndex(key);
+        if (index < 0) {
+            index = -(index + 1);
+        }
+        else {
+            index++;
+        }
+        return index < keys.size() ? new MapEntry(index) : null;
     }
 
     private abstract class MapIterator<T> implements Iterator<T> {
@@ -1119,22 +1142,32 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public K floorKey(K key) {
-            throw new UnsupportedOperationException();
+            Entry<K, V> entry = floorEntry(key);
+            return entry != null ? entry.getKey() : null;
         }
 
         @Override
         public Entry<K, V> floorEntry(K key) {
-            throw new UnsupportedOperationException();
+            int index = findIndex(key);
+            if (index < 0) {
+                index = -(index + 1) - 1;
+            }
+            return index >= lowerIndex() ? new MapEntry(index) : null;
         }
 
         @Override
         public K lowerKey(K key) {
-            throw new UnsupportedOperationException();
+            Entry<K, V> entry = lowerEntry(key);
+            return entry != null ? entry.getKey() : null;
         }
 
         @Override
         public Entry<K, V> lowerEntry(K key) {
-            throw new UnsupportedOperationException();
+            int index = findIndex(key);
+            if (index < 0) {
+                index = -(index + 1);
+            }
+            return index >= lowerIndex() + 1 ? new MapEntry(index-1) : null;
         }
 
         @Override
@@ -1166,22 +1199,35 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public K ceilingKey(K key) {
-            throw new UnsupportedOperationException();
+            Entry<K, V> entry = ceilingEntry(key);
+            return entry != null ? entry.getKey() : null;
         }
 
         @Override
         public Entry<K, V> ceilingEntry(K key) {
-            throw new UnsupportedOperationException();
+            int index = findIndex(key);
+            if (index < 0) {
+                index = -(index + 1);
+            }
+            return index < upperIndex() ? new MapEntry(index) : null;
         }
 
         @Override
         public K higherKey(K key) {
-            throw new UnsupportedOperationException();
+            Entry<K, V> entry = higherEntry(key);
+            return entry != null ? entry.getKey() : null;
         }
 
         @Override
         public Entry<K, V> higherEntry(K key) {
-            throw new UnsupportedOperationException();
+            int index = findIndex(key);
+            if (index < 0) {
+                index = -(index + 1);
+            }
+            else {
+                index++;
+            }
+            return index < upperIndex() ? new MapEntry(index) : null;
         }
 
         @Override
