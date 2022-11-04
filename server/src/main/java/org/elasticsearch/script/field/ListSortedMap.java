@@ -8,6 +8,8 @@
 
 package org.elasticsearch.script.field;
 
+import org.elasticsearch.common.util.Maps;
+
 import java.util.AbstractCollection;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -15,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -31,11 +34,14 @@ import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
-    private ArrayList<K> keys;
-    private ArrayList<V> values;
+    private ArrayList<K> keys;  // defines the iteration order
+    private final Map<K, V> entries;  // stores the values, provides constant-time lookup
     private final Comparator<? super K> comparator;
 
     ListSortedMap() {
@@ -44,7 +50,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     ListSortedMap(Comparator<? super K> comparator) {
         this.keys = new ArrayList<>();
-        this.values = new ArrayList<>();
+        this.entries = new HashMap<>();
         this.comparator = comparator;
     }
 
@@ -54,28 +60,25 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     ListSortedMap(Comparator<? super K> comparator, int size) {
         this.keys = new ArrayList<>(size);
-        this.values = new ArrayList<>(size);
+        this.entries = Maps.newHashMapWithExpectedSize(size);
         this.comparator = comparator;
     }
 
     ListSortedMap(Map<K, V> map) {
         keys = new ArrayList<>(map.keySet());
         if (map instanceof SortedMap<K, V> sorted) {
-            // values sorted in the same order as keys
-            values = new ArrayList<>(sorted.values());
+            // already sorted
             comparator = sorted.comparator();
         }
         else {
             keys.sort(null);
-            values = new ArrayList<>(keys.size());
-            keys.stream().map(map::get).forEach(values::add);
             comparator = null;
         }
+        entries = new HashMap<>(map);
     }
 
     private void ensureCapacity(int size) {
         keys.ensureCapacity(size);
-        values.ensureCapacity(size);
     }
 
     @SuppressWarnings("unchecked")
@@ -102,12 +105,12 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public V getValue() {
-            return values.get(index);
+            return entries.get(getKey());
         }
 
         @Override
         public V setValue(V value) {
-            return values.set(index, value);
+            return entries.put(getKey(), value);
         }
 
         @Override
@@ -141,76 +144,64 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
     @Override
     public void clear() {
         keys.clear();
-        values.clear();
+        entries.clear();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return findIndex(key) >= 0;
+        return entries.containsKey(key);
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return values.contains(value);
+        return entries.containsValue(value);
     }
 
     @Override
     public V get(Object key) {
-        return getOrDefault(key, null);
+        return entries.get(key);
     }
 
     @Override
     public V getOrDefault(Object key, V defaultValue) {
-        int index = findIndex(key);
-        return index >= 0 ? values.get(index) : defaultValue;
+        return entries.getOrDefault(key, defaultValue);
     }
 
     @Override
     public void forEach(BiConsumer<? super K, ? super V> action) {
-        for (int i=0; i<keys.size(); i++) {
-            action.accept(keys.get(i), values.get(i));
+        for (K key : keys) {
+            action.accept(key, entries.get(key));
         }
     }
 
     @Override
     public void replaceAll(BiFunction<? super K, ? super V, ? extends V> function) {
-        for (int i=0; i<keys.size(); i++) {
-            values.set(i, function.apply(keys.get(i), values.get(i)));
+        for (K key : keys) {
+            // don't use compute() & friends, don't want to remove if value is set null
+            entries.put(key, function.apply(key, entries.get(key)));
         }
     }
 
     @Override
     public V put(K key, V value) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            return values.set(index, value);
+        // need to disambiguate between null value and not existing at all
+        boolean exists = entries.containsKey(key);
+        if (exists == false) {
+            int insertIndex = -(findIndex(key) + 1);
+            keys.add(insertIndex, key);
         }
-        else {
-            int insertion = -(index + 1);
-            keys.add(insertion, key);
-            values.add(insertion, value);
-            return null;
-        }
+        return entries.put(key, value);
     }
 
     @Override
     public V putIfAbsent(K key, V value) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            V existing = values.get(index);
-            if (existing == null) {
-                return values.set(index, value);
-            }
-            else {
-                return values.get(index);
-            }
+        // need to disambiguate between null value and not existing at all
+        boolean exists = entries.containsKey(key);
+        if (exists == false) {
+            int insertIndex = -(findIndex(key) + 1);
+            keys.add(insertIndex, key);
         }
-        else {
-            int insertion = -(index + 1);
-            keys.add(insertion, key);
-            values.add(insertion, value);
-            return null;
-        }
+        return entries.putIfAbsent(key, value);
     }
 
     @Override
@@ -222,166 +213,116 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
     @Override
     public V replace(K key, V value) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            return values.set(index, value);
-        }
-        else {
-            return null;
-        }
+        return entries.replace(key, value);
     }
 
     @Override
     public boolean replace(K key, V oldValue, V newValue) {
-        int index = findIndex(key);
-        if (index >= 0 && Objects.equals(oldValue, values.get(index))) {
-            values.set(index, newValue);
-            return true;
-        }
-        else {
-            return false;
-        }
+        return entries.replace(key, oldValue, newValue);
     }
 
     @Override
     public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            return values.get(index);
+        boolean[] computed = new boolean[1];
+        V value = entries.computeIfAbsent(key, k -> {
+            computed[0] = true;
+            return mappingFunction.apply(k);
+        });
+        if (computed[0]) {
+            int insertIndex = -(findIndex(key) + 1);
+            keys.add(insertIndex, key);
         }
-        else {
-            V value = mappingFunction.apply(key);
-            int insertion = -(index + 1);
-            keys.add(insertion, key);
-            values.add(insertion, value);
-            return value;
-        }
+        return value;
     }
 
     @Override
     public V computeIfPresent(K key, BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            V existing = values.get(index);
-            if (existing == null) {
-                return null;
-            }
-            V newV = remappingFunction.apply(key, existing);
-            if (newV != null) {
-                values.set(index, newV);
-                return newV;
-            }
-            else {
-                keys.remove(index);
-                values.remove(index);
-                return null;
-            }
+        boolean[] computed = new boolean[1];
+        V value = entries.computeIfPresent(key, (k, v) -> {
+            computed[0] = true;
+            return remappingFunction.apply(k, v);
+        });
+        if (value == null && computed[0]) {
+            // remove from the keylist
+            keys.remove(findIndex(key));
         }
-        else {
-            return null;
-        }
+        return value;
     }
 
     @Override
     public V compute(K key, BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            V newV = remappingFunction.apply(key, values.get(index));
-            if (newV != null) {
-                values.set(index, newV);
-                return newV;
+        boolean existsBefore = entries.containsKey(key);
+        V value = entries.compute(key, remappingFunction);
+        boolean existsAfter = value != null || entries.containsKey(key);
+        if (existsBefore != existsAfter) {
+            int index = findIndex(key);
+            if (existsBefore) {
+                // removed
+                keys.remove(index);
             }
             else {
-                keys.remove(index);
-                values.remove(index);
-                return null;
-            }
-        }
-        else {
-            V newV = remappingFunction.apply(key, null);
-            if (newV != null) {
+                // added
                 int insertion = -(index + 1);
                 keys.add(insertion, key);
-                values.add(insertion, newV);
-                return newV;
-            }
-            else {
-                return null;
             }
         }
+        return value;
     }
 
     @Override
     public V merge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            V existing = values.get(index);
-            if (existing != null) {
-                V newV = remappingFunction.apply(existing, value);
-                if (newV != null) {
-                    values.set(index, newV);
-                    return newV;
-                }
-                else {
-                    keys.remove(index);
-                    values.remove(index);
-                    return null;
-                }
-            }
-            else {
-                values.set(index, value);
-                return value;
-            }
+        boolean[] computed = new boolean[1];
+        V newValue = entries.merge(key, value, (k, v) -> {
+            computed[0] = true;
+            return remappingFunction.apply(k, v);
+        });
+        if (computed[0] == false) {
+            // added to the map
+            int insertIndex = -(findIndex(key) + 1);
+            keys.add(insertIndex, key);
         }
-        else {
-            int insertion = -(index + 1);
-            keys.add(insertion, key);
-            values.add(insertion, value);
-            return value;
+        else if (newValue == null) {
+            // removed from map
+            keys.remove(findIndex(key));
         }
+        return newValue;
     }
 
     @Override
     public V remove(Object key) {
-        int index = findIndex(key);
-        if (index >= 0) {
-            keys.remove(index);
-            return values.remove(index);
+        boolean exists = entries.containsKey(key);
+        V value = entries.remove(key);
+        if (exists) {
+            keys.remove(findIndex(key));
         }
-        else {
-            return null;
-        }
+        return value;
     }
 
     @Override
     public boolean remove(Object key, Object value) {
-        int index = findIndex(key);
-        if (index >= 0 && Objects.equals(value, values.get(index))) {
-            keys.remove(index);
-            values.remove(index);
-            return true;
+        boolean removed = entries.remove(key, value);
+        if (removed) {
+            keys.remove(findIndex(key));
         }
-        else {
-            return false;
-        }
+        return removed;
     }
 
     private boolean removeIf(IntPredicate predicate) {
         ArrayList<K> newKeys = new ArrayList<>(keys.size());
-        ArrayList<V> newValues = new ArrayList<>(keys.size());
 
         for (int i=0; i<keys.size(); i++) {
             if (predicate.test(i)) {
                 newKeys.add(keys.get(i));
-                newValues.add(values.get(i));
+            }
+            else {
+                entries.remove(keys.get(i));
             }
         }
 
         if (newKeys.size() < keys.size()) {
             newKeys.trimToSize();
-            newValues.trimToSize();
             keys = newKeys;
-            values = newValues;
+            // entries already modified
             return true;
         }
         else {
@@ -407,7 +348,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
     public Entry<K, V> pollFirstEntry() {
         if (keys.isEmpty())
             return null;
-        return Map.entry(keys.remove(0), values.remove(0));
+        K key = keys.remove(0);
+        return Map.entry(key, entries.remove(key));
     }
 
     @Override
@@ -458,7 +400,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
     public Entry<K, V> pollLastEntry() {
         if (keys.isEmpty())
             return null;
-        return Map.entry(keys.remove(keys.size()-1), values.remove(values.size()-1));
+        K key = keys.remove(keys.size()-1);
+        return Map.entry(key, entries.remove(key));
     }
 
     @Override
@@ -517,8 +460,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         @Override
         public void remove() {
             nextIndex--;
-            keys.remove(nextIndex);
-            values.remove(nextIndex);
+            K key = keys.remove(nextIndex);
+            entries.remove(key);
             stopIndex--;
         }
     }
@@ -527,10 +470,16 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
     private boolean keyWithinBounds(Object o, Object[] lowerBound, boolean lowerInclusive, Object[] upperBound, boolean upperInclusive) {
         Comparator c = comparator();
         if (c == null) c = Comparator.naturalOrder();
-        if (lowerBound != null && (lowerInclusive ? c.compare(o, lowerBound[0]) < 0 : c.compare(o, lowerBound[0]) <= 0))
+        try {
+            if (lowerBound != null && (lowerInclusive ? c.compare(o, lowerBound[0]) < 0 : c.compare(o, lowerBound[0]) <= 0))
+                return false;
+            if (upperBound != null && (upperInclusive ? c.compare(o, upperBound[0]) > 0 : c.compare(o, upperBound[0]) >= 0))
+                return false;
+        }
+        catch (ClassCastException e) {
+            // not the right type
             return false;
-        if (upperBound != null && (upperInclusive ? c.compare(o, upperBound[0]) > 0 : c.compare(o, upperBound[0]) >= 0))
-            return false;
+        }
         return true;
     }
 
@@ -560,6 +509,20 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             }
         }
         return upperIndex;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object[] combineLowerBound(Object[] existingBound, K newBound) {
+        return new Object[] {existingBound != null
+            ? Collections.max(Arrays.asList((K) existingBound[0], newBound), comparator())
+            : newBound};
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object[] combineUpperBound(Object[] existingBound, K newBound) {
+        return new Object[] {existingBound != null
+            ? Collections.min(Arrays.asList((K) existingBound[0], newBound), comparator())
+            : newBound};
     }
 
     private abstract class MapCollection<E> extends AbstractCollection<E> {
@@ -604,8 +567,9 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         public void clear() {
             int lower = lowerIndex();
             int upper = upperIndex();
-            keys.subList(lower, upper).clear();
-            values.subList(lower, upper).clear();
+            List<K> remove = keys.subList(lower, upper);
+            remove.forEach(entries::remove);
+            remove.clear();
         }
 
         @Override
@@ -672,9 +636,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public boolean contains(Object o) {
-            if (withinBounds(o) == false)
-                return false;
-            return findIndex(o, lowerIndex(), upperIndex()) >= 0;
+            return withinBounds(o) && containsKey(o);
         }
 
         @Override
@@ -697,12 +659,10 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public boolean remove(Object o) {
-            if (withinBounds(o) == false)
-                return false;
-            int index = findIndex(o);
-            if (index >= 0) {
-                keys.remove(index);
-                values.remove(index);
+            boolean exists = withinBounds(o) && entries.containsKey(o);
+            if (exists) {
+                keys.remove(findIndex(o));
+                entries.remove(o);
                 return true;
             }
             else {
@@ -724,10 +684,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @SuppressWarnings("unchecked")
         private SortedSet<K> headSet(K toElement, boolean inclusive) {
-            Object[] higherBound = new Object[] { this.upperBound != null
-                ? Collections.min(Arrays.asList((K)this.upperBound[0], toElement), comparator())
-                : toElement };
-            return new KeySet(lowerBound, lowerInclusive, higherBound, inclusive);
+            return new KeySet(lowerBound, lowerInclusive, combineUpperBound(upperBound, toElement), inclusive);
         }
 
         @Override
@@ -737,10 +694,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @SuppressWarnings("unchecked")
         private SortedSet<K> tailSet(K fromElement, boolean inclusive) {
-            Object[] lowerBound = new Object[] { this.lowerBound != null
-                ? Collections.max(Arrays.asList((K)this.lowerBound[0], fromElement), comparator())
-                : fromElement };
-            return new KeySet(lowerBound, inclusive, upperBound, upperInclusive);
+            return new KeySet(combineLowerBound(lowerBound, fromElement), inclusive, upperBound, upperInclusive);
         }
 
         @Override
@@ -748,16 +702,10 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return subSet(fromElement, true, toElement, false);
         }
 
-        @SuppressWarnings("unchecked")
         private SortedSet<K> subSet(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
-            Object[] lowerBound = new Object[]{this.lowerBound != null
-                ? Collections.max(Arrays.asList((K) this.lowerBound[0], fromElement), comparator())
-                : fromElement};
-            Object[] upperBound = new Object[]{this.upperBound != null
-                ? Collections.min(Arrays.asList((K) this.upperBound[0], toElement), comparator())
-                : toElement};
-
-            return new KeySet(lowerBound, fromInclusive, upperBound, toInclusive);
+            return new KeySet(
+                combineLowerBound(lowerBound, fromElement), fromInclusive,
+                combineUpperBound(upperBound, toElement), toInclusive);
         }
 
         @Override
@@ -788,7 +736,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public V next() {
-            return values.get(nextIndex());
+            return entries.get(keys.get(nextIndex()));
         }
     }
 
@@ -797,39 +745,40 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             super(lowerBound, lowerInclusive, upperBound, upperInclusive);
         }
 
-        private List<V> values() {
-            return values.subList(lowerIndex(), upperIndex());
+        private record Indexed<K, V>(int index, K key, V value) {}
+
+        private Stream<Indexed<K, V>> values() {
+            return IntStream.range(lowerIndex(), upperIndex()).mapToObj(i -> {
+                K key = keys.get(i);
+                return new Indexed<>(i, key, entries.get(key));
+            });
         }
 
         @Override
         public boolean contains(Object o) {
-            return values().contains(o);
+            return values().anyMatch(i -> Objects.equals(i.value(), o));
         }
 
         @Override
         public boolean containsAll(Collection<?> c) {
-            return values().containsAll(c);
+            return values().map(Indexed::value).collect(Collectors.toSet()).containsAll(c);
         }
 
         @Override
         public boolean remove(Object o) {
-            int lowerIndex = lowerIndex();
-            int subIndex = values.subList(lowerIndex, upperIndex()).indexOf(o);
-            if (subIndex >= 0) {
-                keys.remove(subIndex + lowerIndex);
-                values.remove(subIndex + lowerIndex);
-                return true;
-            }
-            else {
-                return false;
-            }
+            var v = values().filter(i -> Objects.equals(i.value(), o)).findFirst();
+            v.ifPresent(i -> {
+                keys.remove(i.index());
+                entries.remove(i.key());
+            });
+            return v.isPresent();
         }
 
         @Override
         public boolean removeIf(Predicate<? super V> filter) {
             int lowerIndex = lowerIndex();
             int upperIndex = upperIndex();
-            return ListSortedMap.this.removeIf(i -> i >= lowerIndex && i < upperIndex && filter.test(values.get(i)));
+            return ListSortedMap.this.removeIf(i -> i >= lowerIndex && i < upperIndex && filter.test(entries.get(keys.get(i))));
         }
 
         @Override
@@ -839,7 +788,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @Override
         public <T> T[] toArray(T[] a) {
-            return values().toArray(a);
+            return values().toList().toArray(a);
         }
 
         @Override
@@ -869,32 +818,23 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             super(lowerBound, lowerInclusive, upperBound, upperInclusive);
         }
 
-        private int findIndex(Map.Entry<?, ?> entry) {
-            int index = ListSortedMap.this.findIndex(entry.getKey());
-            return index >= lowerIndex() && index < lowerIndex() && Objects.equals(entry.getValue(), values.get(index))
-                ? index
-                : -1;
-        }
-
         @Override
         public boolean contains(Object o) {
-            if (o instanceof Entry<?, ?> e) {
-                return findIndex(e) >= 0;
-            }
-            return false;
+            return entries.entrySet().contains(o) && findIndex(((Entry<?, ?>)o).getKey()) >= 0;
         }
 
         @Override
         public boolean remove(Object o) {
-            if (o instanceof Entry<?, ?> e) {
-                int index = findIndex(e);
-                if (index >= 0) {
-                    keys.remove(index);
-                    values.remove(index);
-                    return true;
-                }
+            int index;
+            Entry<?, ?> e;
+            if (entries.entrySet().contains(o) && (index = findIndex((e = (Entry<?, ?>)o).getKey())) >= 0) {
+                keys.remove(index);
+                entries.remove(e.getKey());
+                return true;
             }
-            return false;
+            else {
+                return false;
+            }
         }
 
         @Override
@@ -991,20 +931,19 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         public void clear() {
             int lower = lowerIndex();
             int upper = upperIndex();
-            keys.subList(lower, upper).clear();
-            values.subList(lower, upper).clear();
+            List<K> remove = keys.subList(lower, upper);
+            remove.forEach(entries::remove);
+            remove.clear();
         }
 
         @Override
         public boolean containsKey(Object key) {
-            if (withinBounds(key) == false)
-                return false;
-            return findIndex(key) >= 0;
+            return entries.containsKey(key) && withinBounds(key);
         }
 
         @Override
         public boolean containsValue(Object value) {
-            return values.subList(lowerIndex(), upperIndex()).contains(value);
+            return values().contains(value);
         }
 
         @Override
@@ -1016,15 +955,15 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         public V getOrDefault(Object key, V defaultValue) {
             if (withinBounds(key) == false)
                 return defaultValue;
-            int index = findIndex(key);
-            return index >= 0 ? values.get(index) : defaultValue;
+            return entries.getOrDefault(key, defaultValue);
         }
 
         @Override
         public void forEach(BiConsumer<? super K, ? super V> action) {
             int end = upperIndex();
             for (int i=lowerIndex(); i<end; i++) {
-                action.accept(keys.get(i), values.get(i));
+                K key = keys.get(i);
+                action.accept(key, entries.get(key));
             }
         }
 
@@ -1032,7 +971,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
         public void replaceAll(BiFunction<? super K, ? super V, ? extends V> function) {
             int end = upperIndex();
             for (int i=lowerIndex(); i<end; i++) {
-                values.set(i, function.apply(keys.get(i), values.get(i)));
+                K key = keys.get(i);
+                entries.put(key, function.apply(key, entries.get(key)));
             }
         }
 
@@ -1137,7 +1077,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             int upper = upperIndex();
             if (lower == upper)
                 return null;
-            return Map.entry(keys.remove(lower), values.remove(lower));
+            K key = keys.remove(lower);
+            return Map.entry(key, entries.remove(key));
         }
 
         @Override
@@ -1152,7 +1093,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             if (index < 0) {
                 index = -(index + 1) - 1;
             }
-            return index >= lowerIndex() ? new MapEntry(index) : null;
+            return index >= lowerIndex() && index < upperIndex() ? new MapEntry(index) : null;
         }
 
         @Override
@@ -1167,7 +1108,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             if (index < 0) {
                 index = -(index + 1);
             }
-            return index >= lowerIndex() + 1 ? new MapEntry(index-1) : null;
+            return index >= lowerIndex() + 1 && index < upperIndex() ? new MapEntry(index-1) : null;
         }
 
         @Override
@@ -1194,7 +1135,8 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             int upper = upperIndex();
             if (lower == upper)
                 return null;
-            return Map.entry(keys.remove(upper-1), values.remove(upper-1));
+            K key = keys.remove(upper-1);
+            return Map.entry(key, entries.remove(key));
         }
 
         @Override
@@ -1209,7 +1151,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             if (index < 0) {
                 index = -(index + 1);
             }
-            return index < upperIndex() ? new MapEntry(index) : null;
+            return index >= lowerIndex() && index < upperIndex() ? new MapEntry(index) : null;
         }
 
         @Override
@@ -1227,7 +1169,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             else {
                 index++;
             }
-            return index < upperIndex() ? new MapEntry(index) : null;
+            return index >= lowerIndex() && index < upperIndex() ? new MapEntry(index) : null;
         }
 
         @Override
@@ -1262,10 +1204,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @SuppressWarnings("unchecked")
         public NavigableMap<K, V> headMap(K toElement, boolean inclusive) {
-            Object[] higherBound = new Object[] { this.upperBound != null
-                ? Collections.min(Arrays.asList((K)this.upperBound[0], toElement), comparator())
-                : toElement };
-            return new SubMap(lowerBound, lowerInclusive, higherBound, inclusive);
+            return new SubMap(lowerBound, lowerInclusive, combineUpperBound(upperBound, toElement), inclusive);
         }
 
         @Override
@@ -1275,10 +1214,7 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
 
         @SuppressWarnings("unchecked")
         public NavigableMap<K, V> tailMap(K fromElement, boolean inclusive) {
-            Object[] lowerBound = new Object[] { this.lowerBound != null
-                ? Collections.max(Arrays.asList((K)this.lowerBound[0], fromElement), comparator())
-                : fromElement };
-            return new SubMap(lowerBound, inclusive, upperBound, upperInclusive);
+            return new SubMap(combineLowerBound(lowerBound, fromElement), inclusive, upperBound, upperInclusive);
         }
 
         @Override
@@ -1286,16 +1222,10 @@ class ListSortedMap<K, V> implements NavigableMap<K, V> {
             return subMap(fromElement, true, toElement, false);
         }
 
-        @SuppressWarnings("unchecked")
         public NavigableMap<K, V> subMap(K fromElement, boolean fromInclusive, K toElement, boolean toInclusive) {
-            Object[] lowerBound = new Object[]{this.lowerBound != null
-                ? Collections.max(Arrays.asList((K) this.lowerBound[0], fromElement), comparator())
-                : fromElement};
-            Object[] upperBound = new Object[]{this.upperBound != null
-                ? Collections.min(Arrays.asList((K) this.upperBound[0], toElement), comparator())
-                : toElement};
-
-            return new SubMap(lowerBound, fromInclusive, upperBound, toInclusive);
+            return new SubMap(
+                combineLowerBound(lowerBound, fromElement), fromInclusive,
+                combineUpperBound(upperBound, toElement), toInclusive);
         }
 
         @Override
