@@ -30,14 +30,14 @@ public class LittleMapStorage {
         private NavigableMap<String, Node> nested;
 
         private NavigableMap<String, Node> nested() {
-            return Objects.requireNonNullElse(nested, Collections.emptyNavigableMap());
-        }
-
-        private Node getContainer(String key) {
             if (nested == null) {
                 nested = new ListSortedMap<>();
             }
-            return nested.computeIfAbsent(key, k -> new Node());
+            return nested;
+        }
+
+        private Node getContainer(String key) {
+            return nested().computeIfAbsent(key, k -> new Node());
         }
 
         /**
@@ -47,7 +47,7 @@ public class LittleMapStorage {
             if (nested == null) {
                 nested = new ListSortedMap<>();
             }
-            nested.put(key, value);
+            nested().put(key, value);
         }
 
         Object ctxGet() {
@@ -313,30 +313,10 @@ public class LittleMapStorage {
      *   > 0 if candidate fully matches some number of segments.  Returned value is the index of last matched segment
      */
     public static List<String> match2(List<String> path, String candidate) {
-        int candidateStart = 0;
-        for (int i = 0; i < path.size(); i++) {
-            String pathSegment = path.get(i);
-            int maxMatchLength = candidate.length() - candidateStart;
-            if (pathSegment.length() > maxMatchLength) {
-                // candidate too short, assumes no dots in path
-                return null;
-            }
-            for (int j = 0; j < pathSegment.length(); j++) {
-                if (pathSegment.charAt(j) != candidate.charAt(candidateStart + j)) {
-                    return null;
-                }
-            }
-            candidateStart += pathSegment.length();
-            if (candidateStart == candidate.length()) {
-                return path.subList(i + 1, path.size());
-            }
-            // candidate has more values and we are at a segment boundary, so next char must be a dot.
-            if (candidate.charAt(candidateStart++) != '.') {
-                return null;
-            }
-        }
-        // matched all path segments but candidate had extra values (starting with dot due to last conditional)
-        return null;
+        int matchedNum = match(path, candidate);
+        return matchedNum < 0
+            ? null
+            : path.subList(matchedNum+1, path.size());
     }
 
     public Object put(Object value, String... field) {
@@ -370,8 +350,24 @@ public class LittleMapStorage {
         }
 
         @Override
+        public Object get(Object key) {
+            return getOrDefault(key, null);
+        }
+
+        @Override
+        public Object getOrDefault(Object key, Object defaultValue) {
+            Node n = node.nested().get(key);
+            return n != null ? n.ctxGet() : defaultValue;
+        }
+
+        @Override
         public Object put(String key, Object value) {
             return LittleMapStorage.put(node, value, key);
+        }
+
+        @Override
+        public Set<String> keySet() {
+            return node.nested().keySet();
         }
 
         @Override
@@ -380,10 +376,15 @@ public class LittleMapStorage {
                 final Set<Entry<String, Node>> values = node.nested().entrySet();
 
                 @Override
+                public int size() {
+                    return NestedCtxMap.this.size();
+                }
+
+                @Override
                 public Iterator<Entry<String, Object>> iterator() {
                     return new Iterator<>() {
 
-                        Iterator<Entry<String, Node>> it = values.iterator();
+                        final Iterator<Entry<String, Node>> it = values.iterator();
 
                         @Override
                         public boolean hasNext() {
@@ -406,8 +407,19 @@ public class LittleMapStorage {
 
                                 @Override
                                 public Object setValue(Object value) {
-                                    // TODO(stu): untested
-                                    return null;
+                                    return entry.getValue().setValue(value);
+                                }
+
+                                @Override
+                                public boolean equals(Object obj) {
+                                    return obj instanceof Entry<?, ?> e
+                                        && Objects.equals(getKey(), e.getKey())
+                                        && Objects.equals(getValue(), e.getValue());
+                                }
+
+                                @Override
+                                public int hashCode() {
+                                    return Objects.hashCode(getKey()) ^ Objects.hash(getValue());
                                 }
                             };
                         }
@@ -417,11 +429,6 @@ public class LittleMapStorage {
                             it.remove();
                         }
                     };
-                }
-
-                @Override
-                public int size() {
-                    return NestedCtxMap.this.size();
                 }
             };
         }
