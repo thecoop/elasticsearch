@@ -25,6 +25,7 @@ public class InternalPrecommitTasks {
         project.getPluginManager().apply(ForbiddenPatternsPrecommitPlugin.class);
         project.getPluginManager().apply(LicenseHeadersPrecommitPlugin.class);
         project.getPluginManager().apply(FilePermissionsPrecommitPlugin.class);
+        project.getPluginManager().apply(TransportVersionCheckerPrecommitPlugin.class);
         project.getPluginManager().apply(LoggerUsagePrecommitPlugin.class);
         project.getPluginManager().apply(TestingConventionsPrecommitPlugin.class);
         // tasks with just tests don't need certain tasks to run, so this flag makes adding
