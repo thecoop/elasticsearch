@@ -21,8 +21,9 @@ import org.gradle.workers.WorkParameters;
 import org.gradle.workers.WorkQueue;
 import org.gradle.workers.WorkerExecutor;
 
-import javax.inject.Inject;
 import java.io.File;
+
+import javax.inject.Inject;
 
 /**
  * Runs TransportVersionCheck on a set of directories.

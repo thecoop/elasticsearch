@@ -21,6 +21,11 @@ public class TransportVersionCheckerPrecommitPlugin extends PrecommitPlugin {
     @Override
     public TaskProvider<? extends Task> createTask(Project project) {
         Configuration transportVersionConfig = project.getConfigurations().create("transportVersionPlugin");
+        // this makes it easier to test by not requiring this project to be always available in our
+        // test sample projects
+        if (project.findProject(":test:transport-version-usage") != null) {
+            project.getDependencies().add("transportVersionPlugin", project.project(":test:transport-version-usage"));
+        }
         TaskProvider<TransportVersionTask> transportVersion = project.getTasks()
             .register("transportVersionCheck", TransportVersionTask.class);
 
