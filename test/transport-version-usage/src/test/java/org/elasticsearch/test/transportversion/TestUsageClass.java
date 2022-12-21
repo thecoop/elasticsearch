@@ -14,9 +14,9 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 
 import java.util.Arrays;
 
-public class TestUsageClass {
+class TestUsageClass {
 
-    public TestUsageClass(StreamInput input) {
+    TestUsageClass(StreamInput input) {
         // reference some things
         Arrays.asList(Version.V_7_0_0, Version.V_7_5_0);
     }

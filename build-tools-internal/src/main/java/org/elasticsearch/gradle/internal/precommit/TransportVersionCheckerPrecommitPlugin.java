@@ -26,8 +26,8 @@ public class TransportVersionCheckerPrecommitPlugin extends PrecommitPlugin {
         if (project.findProject(":test:transport-version-usage") != null) {
             project.getDependencies().add("transportVersionPlugin", project.project(":test:transport-version-usage"));
         }
-        TaskProvider<TransportVersionTask> transportVersion = project.getTasks()
-            .register("transportVersionCheck", TransportVersionTask.class);
+        TaskProvider<TransportVersionCheckTask> transportVersion = project.getTasks()
+            .register("transportVersionCheck", TransportVersionCheckTask.class);
 
         SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
         sourceSets.matching(

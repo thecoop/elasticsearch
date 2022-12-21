@@ -14,22 +14,26 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
-import org.gradle.api.tasks.*;
+import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Classpath;
+import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.api.tasks.SkipWhenEmpty;
+import org.gradle.api.tasks.SourceSet;
+import org.gradle.api.tasks.TaskAction;
 import org.gradle.process.ExecOperations;
+import org.gradle.process.ExecResult;
 import org.gradle.workers.WorkAction;
 import org.gradle.workers.WorkParameters;
 import org.gradle.workers.WorkQueue;
 import org.gradle.workers.WorkerExecutor;
 
-import java.io.File;
-
 import javax.inject.Inject;
+import java.io.File;
+import java.io.OutputStream;
 
-/**
- * Runs TransportVersionCheck on a set of directories.
- */
-@CacheableTask
-public abstract class TransportVersionTask extends PrecommitTask {
+public abstract class AbstractTransportVersionTask extends PrecommitTask {
 
     private FileCollection classpath;
 
@@ -37,24 +41,17 @@ public abstract class TransportVersionTask extends PrecommitTask {
 
     private final ObjectFactory objectFactory;
 
-    @Inject
-    public TransportVersionTask(ObjectFactory objectFactory) {
+    public AbstractTransportVersionTask(ObjectFactory objectFactory) {
         this.classesDirs = objectFactory.listProperty(FileCollection.class);
         this.objectFactory = objectFactory;
-        setDescription("Runs TransportVersionCheck on output directories of all source sets");
+    }
+
+    protected File getTransportFile() {
+        return new File(getProjectLayout().getProjectDirectory().getAsFile(), "transport.txt");
     }
 
     @Inject
     public abstract WorkerExecutor getWorkerExecutor();
-
-    @TaskAction
-    public void runTransportVersionTask() {
-        WorkQueue workQueue = getWorkerExecutor().noIsolation();
-        workQueue.submit(TransportVersionWorkAction.class, parameters -> {
-            parameters.getClasspath().setFrom(getClasspath());
-            parameters.getClassDirectories().setFrom(getClassDirectories());
-        });
-    }
 
     @Classpath
     public FileCollection getClasspath() {
@@ -76,29 +73,5 @@ public abstract class TransportVersionTask extends PrecommitTask {
         classesDirs.add(sourceSet.getOutput().getClassesDirs());
     }
 
-    abstract static class TransportVersionWorkAction implements WorkAction<Parameters> {
-
-        private final ExecOperations execOperations;
-
-        @Inject
-        public TransportVersionWorkAction(ExecOperations execOperations) {
-            this.execOperations = execOperations;
-        }
-
-        @Override
-        public void execute() {
-            LoggedExec.javaexec(execOperations, spec -> {
-                spec.getMainClass().set("org.elasticsearch.test.transportversion.ESTransportVersionChecker");
-                spec.classpath(getParameters().getClasspath());
-                getParameters().getClassDirectories().forEach(spec::args);
-            });
-        }
-    }
-
-    interface Parameters extends WorkParameters {
-        ConfigurableFileCollection getClassDirectories();
-
-        ConfigurableFileCollection getClasspath();
-    }
 
 }

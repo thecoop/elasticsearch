@@ -8,7 +8,6 @@
 
 package org.elasticsearch.test.transportversion;
 
-import org.elasticsearch.core.Strings;
 import org.elasticsearch.test.ESTestCase;
 
 import java.io.*;
@@ -16,7 +15,7 @@ import java.util.List;
 
 import static org.hamcrest.Matchers.equalTo;
 
-public class ESTransportVersionUsageTests extends ESTestCase {
+public class ESTransportVersionReaderTests extends ESTestCase {
 
     public void testVersionUsage() throws IOException {
         Class<?> testClass = TestUsageClass.class;
@@ -25,8 +24,7 @@ public class ESTransportVersionUsageTests extends ESTestCase {
             PrintStream out = new PrintStream(outBytes);
             InputStream stream = testClass.getResourceAsStream(testClass.getSimpleName() + ".class")
         ) {
-            ESTransportVersionChecker.outputUsages(stream, out);
-
+            ESTransportVersionReader.outputUsages(stream, out);
             out.flush();
         }
 

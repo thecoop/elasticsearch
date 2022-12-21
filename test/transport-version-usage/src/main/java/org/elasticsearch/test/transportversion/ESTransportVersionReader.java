@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 
-public class ESTransportVersionChecker {
+public class ESTransportVersionReader {
     public static final String VERSION_CLASS = "Lorg/elasticsearch/Version;";
     public static final String STREAMINPUT_INIT_DESC = "(Lorg/elasticsearch/common/io/stream/StreamInput;)V";
     public static final String WRITETO_DESC = "(Lorg/elasticsearch/common/io/stream/StreamOutput;)V";
