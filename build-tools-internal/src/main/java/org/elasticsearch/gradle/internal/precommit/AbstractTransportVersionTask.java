@@ -8,30 +8,21 @@
 
 package org.elasticsearch.gradle.internal.precommit;
 
-import org.elasticsearch.gradle.LoggedExec;
 import org.elasticsearch.gradle.internal.conventions.precommit.PrecommitTask;
-import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
-import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.SourceSet;
-import org.gradle.api.tasks.TaskAction;
-import org.gradle.process.ExecOperations;
-import org.gradle.process.ExecResult;
-import org.gradle.workers.WorkAction;
-import org.gradle.workers.WorkParameters;
-import org.gradle.workers.WorkQueue;
 import org.gradle.workers.WorkerExecutor;
 
-import javax.inject.Inject;
 import java.io.File;
-import java.io.OutputStream;
+
+import javax.inject.Inject;
 
 public abstract class AbstractTransportVersionTask extends PrecommitTask {
 
@@ -72,6 +63,5 @@ public abstract class AbstractTransportVersionTask extends PrecommitTask {
     public void addSourceSet(SourceSet sourceSet) {
         classesDirs.add(sourceSet.getOutput().getClassesDirs());
     }
-
 
 }

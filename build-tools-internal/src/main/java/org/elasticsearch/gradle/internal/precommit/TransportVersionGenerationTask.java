@@ -15,22 +15,21 @@ import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.*;
 import org.gradle.process.ExecOperations;
 import org.gradle.process.ExecResult;
-import org.gradle.process.internal.ExecException;
 import org.gradle.workers.WorkAction;
 import org.gradle.workers.WorkParameters;
 import org.gradle.workers.WorkQueue;
 import org.gradle.workers.WorkerExecutionException;
 
-import javax.inject.Inject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
+import javax.inject.Inject;
+
 /**
- * Runs TransportVersionCheck on a set of directories.
+ * Generates a transport version file for a set of directories.
  */
-@CacheableTask
 public abstract class TransportVersionGenerationTask extends AbstractTransportVersionTask {
 
     @OutputFile
@@ -56,6 +55,7 @@ public abstract class TransportVersionGenerationTask extends AbstractTransportVe
 
     interface Parameters extends WorkParameters {
         Property<File> getOutputFile();
+
         ConfigurableFileCollection getClassDirectories();
 
         ConfigurableFileCollection getClasspath();
@@ -83,8 +83,7 @@ public abstract class TransportVersionGenerationTask extends AbstractTransportVe
             result.assertNormalExitValue();
             try (FileOutputStream file = new FileOutputStream(getParameters().getOutputFile().get())) {
                 output.writeTo(file);
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 throw new WorkerExecutionException("Could not write output file", e);
             }
         }

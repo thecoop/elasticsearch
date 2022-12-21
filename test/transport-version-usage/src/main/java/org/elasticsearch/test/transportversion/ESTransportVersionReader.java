@@ -80,8 +80,7 @@ public class ESTransportVersionReader {
 
         @Override
         public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-            if (("writeTo".equals(name) && WRITETO_DESC.equals(desc))
-                || ("<init>".equals(name) && STREAMINPUT_INIT_DESC.equals(desc))) {
+            if (("writeTo".equals(name) && WRITETO_DESC.equals(desc)) || ("<init>".equals(name) && STREAMINPUT_INIT_DESC.equals(desc))) {
                 return new MethodChecker(referencedFields::add, access, name, desc, signature, exceptions);
             } else {
                 return super.visitMethod(access, name, desc, signature, exceptions);
