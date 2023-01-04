@@ -6,13 +6,16 @@
  * Side Public License, v 1.
  */
 
-package org.elasticsearch.gradle.internal.precommit;
+package org.elasticsearch.gradle.internal;
 
 import org.elasticsearch.gradle.LoggedExec;
+import org.elasticsearch.gradle.internal.precommit.AbstractTransportVersionTask;
 import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.logging.Logger;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
-import org.gradle.api.tasks.*;
+import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.TaskAction;
 import org.gradle.process.ExecOperations;
 import org.gradle.process.ExecResult;
 import org.gradle.workers.WorkAction;
@@ -24,7 +27,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-
 import javax.inject.Inject;
 
 /**
@@ -47,6 +49,7 @@ public abstract class TransportVersionGenerationTask extends AbstractTransportVe
     public void runTransportVersionGeneration() {
         WorkQueue workQueue = getWorkerExecutor().noIsolation();
         workQueue.submit(TransportVersionGenerationAction.class, parameters -> {
+            parameters.getLogger().set(getLogger());
             parameters.getOutputFile().set(getOutputFile());
             parameters.getClasspath().setFrom(getClasspath());
             parameters.getClassDirectories().setFrom(getClassDirectories());
@@ -54,6 +57,8 @@ public abstract class TransportVersionGenerationTask extends AbstractTransportVe
     }
 
     interface Parameters extends WorkParameters {
+        Property<Logger> getLogger();
+
         Property<File> getOutputFile();
 
         ConfigurableFileCollection getClassDirectories();
@@ -72,6 +77,9 @@ public abstract class TransportVersionGenerationTask extends AbstractTransportVe
 
         @Override
         public void execute() {
+            var outputFile = getParameters().getOutputFile().get();
+            getParameters().getLogger().get().info("Generating transport file {}", outputFile);
+
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             ExecResult result = LoggedExec.javaexec(execOperations, spec -> {
                 spec.getMainClass().set("org.elasticsearch.test.transportversion.ESTransportVersionReader");
