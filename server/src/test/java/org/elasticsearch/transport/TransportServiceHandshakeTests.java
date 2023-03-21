@@ -277,6 +277,94 @@ public class TransportServiceHandshakeTests extends ESTestCase {
         assertFalse(transportServiceA.nodeConnected(discoveryNode));
     }
 
+
+    public void testPatchFixNodeVersions() {
+        Settings settings = Settings.builder().put("cluster.name", "test").build();
+        TransportService transportServiceA = startServices(
+            "TS_A",
+            settings,
+            TransportVersion.CURRENT,
+            Version.CURRENT,
+            TransportService.NOOP_TRANSPORT_INTERCEPTOR
+        );
+        TransportService transportServiceB = startServices(
+            "TS_B",
+            settings,
+            TransportVersion.MINIMUM_COMPATIBLE,
+            Version.fromId(Version.CURRENT.minimumCompatibilityVersion().id + 1),
+            TransportService.NOOP_TRANSPORT_INTERCEPTOR
+        );
+        DiscoveryNode discoveryNode = new DiscoveryNode(
+            "",
+            transportServiceB.getLocalNode().getAddress(),
+            emptyMap(),
+            emptySet(),
+            Version.CURRENT.minimumCompatibilityVersion()
+        );
+        IllegalStateException ex = expectThrows(IllegalStateException.class, () -> {
+            try (
+                Transport.Connection connection = AbstractSimpleTransportTestCase.openConnection(
+                    transportServiceA,
+                    discoveryNode,
+                    TestProfiles.LIGHT_PROFILE
+                )
+            ) {
+                PlainActionFuture.get(fut -> transportServiceA.handshake(connection, timeout, fut.map(x -> null)));
+            }
+        });
+        assertThat(
+            ex.getMessage(),
+            containsString(
+                "handshake with ["
+                    + discoveryNode
+                    + "] failed: remote node version ["
+                    + transportServiceB.getLocalNode().getVersion()
+                    + "] is incompatible with local node version ["
+                    + Version.CURRENT
+                    + "]"
+            )
+        );
+        assertFalse(transportServiceA.nodeConnected(discoveryNode));
+    }
+
+    public void testPatchFixTransportVersions() {
+        Settings settings = Settings.builder().put("cluster.name", "test").build();
+        TransportService transportServiceA = startServices(
+            "TS_A",
+            settings,
+            TransportVersion.CURRENT,
+            Version.CURRENT,
+            TransportService.NOOP_TRANSPORT_INTERCEPTOR
+        );
+        TransportService transportServiceB = startServices(
+            "TS_B",
+            settings,
+            TransportVersion.fromId(TransportVersion.MINIMUM_COMPATIBLE.id + 1),
+            Version.CURRENT.minimumCompatibilityVersion(),
+            TransportService.NOOP_TRANSPORT_INTERCEPTOR
+        );
+        DiscoveryNode discoveryNode = new DiscoveryNode(
+            "",
+            transportServiceB.getLocalNode().getAddress(),
+            emptyMap(),
+            emptySet(),
+            Version.CURRENT.minimumCompatibilityVersion()
+        );
+        expectThrows(ConnectTransportException.class, () -> {
+            try (
+                Transport.Connection connection = AbstractSimpleTransportTestCase.openConnection(
+                    transportServiceA,
+                    discoveryNode,
+                    TestProfiles.LIGHT_PROFILE
+                )
+            ) {
+                PlainActionFuture.get(fut -> transportServiceA.handshake(connection, timeout, fut.map(x -> null)));
+            }
+        });
+        // the error is exposed as a general connection exception, the actual message is in the logs
+        assertFalse(transportServiceA.nodeConnected(discoveryNode));
+    }
+
     public void testNodeConnectWithDifferentNodeId() {
         Settings settings = Settings.builder().put("cluster.name", "test").build();
         TransportService transportServiceA = startServices(
