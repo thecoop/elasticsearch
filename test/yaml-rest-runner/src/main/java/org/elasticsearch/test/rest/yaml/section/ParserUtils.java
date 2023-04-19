@@ -8,7 +8,6 @@
 
 package org.elasticsearch.test.rest.yaml.section;
 
-import org.elasticsearch.core.Tuple;
 import org.elasticsearch.xcontent.XContentParser;
 
 import java.io.IOException;
@@ -30,7 +29,7 @@ class ParserUtils {
         return field;
     }
 
-    public static Tuple<String, Object> parseTuple(XContentParser parser) throws IOException {
+    public static Map.Entry<String, Object> parseTuple(XContentParser parser) throws IOException {
         parser.nextToken();
         advanceToFieldName(parser);
         Map<String, Object> map = parser.map();
@@ -41,8 +40,7 @@ class ParserUtils {
             throw new IllegalArgumentException("expected key value pair but found an object with " + map.size() + " fields");
         }
 
-        Map.Entry<String, Object> entry = map.entrySet().iterator().next();
-        return Tuple.tuple(entry.getKey(), entry.getValue());
+        return map.entrySet().iterator().next();
     }
 
     public static void advanceToFieldName(XContentParser parser) throws IOException {

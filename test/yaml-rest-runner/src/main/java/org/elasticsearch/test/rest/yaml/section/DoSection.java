@@ -30,7 +30,6 @@ import org.elasticsearch.xcontent.json.JsonXContent;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -451,7 +450,7 @@ public class DoSection implements ExecutableSection {
                 }
                 boolean matchedRegex = false;
 
-                for (Pattern pattern : new HashSet<>(expectedRegex)) {
+                for (Pattern pattern : expectedRegex.toArray(Pattern[]::new)) {
                     if (pattern.matcher(message).matches()) {
                         matchedRegex = true;
                         expectedRegex.remove(pattern);
@@ -472,15 +471,9 @@ public class DoSection implements ExecutableSection {
                 unmatched.add(header);
             }
         }
-        if (expected.isEmpty() == false) {
-            for (final String header : expected) {
-                missing.add(header);
-            }
-        }
-        if (expectedRegex.isEmpty() == false) {
-            for (final Pattern headerPattern : expectedRegex) {
-                missingRegex.add(headerPattern.pattern());
-            }
+        missing.addAll(expected);
+        for (final Pattern headerPattern : expectedRegex) {
+            missingRegex.add(headerPattern.pattern());
         }
 
         // Log and remove all deprecation warnings for legacy index templates as a shortcut to dealing with all the legacy

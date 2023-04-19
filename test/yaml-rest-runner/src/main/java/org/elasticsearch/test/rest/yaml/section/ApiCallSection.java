@@ -15,8 +15,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static java.util.Collections.unmodifiableMap;
-
 /**
  * Represents a test fragment that contains the information needed to call an api
  */
@@ -38,15 +36,11 @@ public class ApiCallSection {
 
     public Map<String, String> getParams() {
         // make sure we never modify the parameters once returned
-        return unmodifiableMap(params);
+        return Collections.unmodifiableMap(params);
     }
 
     public void addParam(String key, String value) {
-        String existingValue = params.get(key);
-        if (existingValue != null) {
-            value = existingValue + "," + value;
-        }
-        this.params.put(key, value);
+        params.merge(key, value, (v1, v2) -> v1 + "," + v2);
     }
 
     public void addHeaders(Map<String, String> otherHeaders) {
@@ -54,7 +48,7 @@ public class ApiCallSection {
     }
 
     public Map<String, String> getHeaders() {
-        return unmodifiableMap(headers);
+        return Collections.unmodifiableMap(headers);
     }
 
     public List<Map<String, Object>> getBodies() {
@@ -66,7 +60,7 @@ public class ApiCallSection {
     }
 
     public boolean hasBody() {
-        return bodies.size() > 0;
+        return bodies.isEmpty() == false;
     }
 
     /**

@@ -9,7 +9,6 @@ package org.elasticsearch.test.rest.yaml.section;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.elasticsearch.core.Tuple;
 import org.elasticsearch.xcontent.XContentLocation;
 import org.elasticsearch.xcontent.XContentParser;
 
@@ -28,10 +27,8 @@ import static org.junit.Assert.assertThat;
 public class CloseToAssertion extends Assertion {
     public static CloseToAssertion parse(XContentParser parser) throws IOException {
         XContentLocation location = parser.getTokenLocation();
-        Tuple<String, Object> fieldValueTuple = ParserUtils.parseTuple(parser);
-        if (fieldValueTuple.v2() instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) fieldValueTuple.v2();
+        Map.Entry<String, Object> fieldValueTuple = ParserUtils.parseTuple(parser);
+        if (fieldValueTuple.getValue() instanceof Map<?, ?> map) {
             if (map.size() != 2) {
                 throw new IllegalArgumentException("expected a map with value and error but got a map with " + map.size() + " fields");
             }
@@ -43,10 +40,15 @@ public class CloseToAssertion extends Assertion {
             if (errObj instanceof Number == false) {
                 throw new IllegalArgumentException("error is missing or not a number");
             }
-            return new CloseToAssertion(location, fieldValueTuple.v1(), ((Number) valObj).doubleValue(), ((Number) errObj).doubleValue());
+            return new CloseToAssertion(
+                location,
+                fieldValueTuple.getKey(),
+                ((Number) valObj).doubleValue(),
+                ((Number) errObj).doubleValue()
+            );
         } else {
             throw new IllegalArgumentException(
-                "expected a map with value and error but got " + fieldValueTuple.v2().getClass().getSimpleName()
+                "expected a map with value and error but got " + fieldValueTuple.getValue().getClass().getSimpleName()
             );
         }
 
@@ -71,7 +73,7 @@ public class CloseToAssertion extends Assertion {
         if (actualValue instanceof Number actualValueNumber) {
             assertThat(actualValueNumber.doubleValue(), closeTo((Double) expectedValue, error));
         } else {
-            throw new AssertionError("excpected a value close to " + expectedValue + " but got " + actualValue + ", which is not a number");
+            throw new AssertionError("expected a value close to " + expectedValue + " but got " + actualValue + ", which is not a number");
         }
     }
 }

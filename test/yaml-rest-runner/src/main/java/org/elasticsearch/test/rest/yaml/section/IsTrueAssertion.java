@@ -14,8 +14,10 @@ import org.elasticsearch.xcontent.XContentParser;
 
 import java.io.IOException;
 
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.equalToIgnoringCase;
+import static org.hamcrest.Matchers.hasToString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertThat;
@@ -42,10 +44,11 @@ public class IsTrueAssertion extends Assertion {
         logger.trace("assert that [{}] has a true value (field [{}])", actualValue, getField());
         String errorMessage = errorMessage();
         assertThat(errorMessage, actualValue, notNullValue());
-        String actualString = actualValue.toString();
-        assertThat(errorMessage, actualString, not(equalTo("")));
-        assertThat(errorMessage, actualString, not(equalToIgnoringCase(Boolean.FALSE.toString())));
-        assertThat(errorMessage, actualString, not(equalTo("0")));
+        assertThat(
+            errorMessage,
+            actualValue,
+            hasToString(allOf(not(equalTo("")), not(equalToIgnoringCase(Boolean.FALSE.toString())), not(equalTo("0"))))
+        );
     }
 
     private String errorMessage() {

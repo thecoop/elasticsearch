@@ -9,15 +9,14 @@ package org.elasticsearch.test.rest.yaml.section;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.elasticsearch.core.Tuple;
 import org.elasticsearch.xcontent.XContentLocation;
 import org.elasticsearch.xcontent.XContentParser;
+import org.hamcrest.Matcher;
 
 import java.io.IOException;
+import java.util.Map;
 
-import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.lessThan;
-import static org.junit.Assert.assertThat;
 
 /**
  * Represents a lt assert section:
@@ -25,17 +24,17 @@ import static org.junit.Assert.assertThat;
  *  - lt:    { fields._ttl: 20000}
  *
  */
-public class LessThanAssertion extends Assertion {
+public class LessThanAssertion extends ComparableAssertion {
     public static LessThanAssertion parse(XContentParser parser) throws IOException {
         XContentLocation location = parser.getTokenLocation();
-        Tuple<String, Object> stringObjectTuple = ParserUtils.parseTuple(parser);
-        if (false == stringObjectTuple.v2() instanceof Comparable) {
+        Map.Entry<String, Object> stringObjectTuple = ParserUtils.parseTuple(parser);
+        if (false == stringObjectTuple.getValue() instanceof Comparable) {
             throw new IllegalArgumentException(
                 "lt section can only be used with objects that support natural ordering, found "
-                    + stringObjectTuple.v2().getClass().getSimpleName()
+                    + stringObjectTuple.getValue().getClass().getSimpleName()
             );
         }
-        return new LessThanAssertion(location, stringObjectTuple.v1(), stringObjectTuple.v2());
+        return new LessThanAssertion(location, stringObjectTuple.getKey(), stringObjectTuple.getValue());
     }
 
     private static final Logger logger = LogManager.getLogger(LessThanAssertion.class);
@@ -45,30 +44,17 @@ public class LessThanAssertion extends Assertion {
     }
 
     @Override
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    protected void doAssert(Object actualValue, Object expectedValue) {
-        logger.trace("assert that [{}] is less than [{}] (field: [{}])", actualValue, expectedValue, getField());
-        assertThat(
-            "value of [" + getField() + "] is not comparable (got [" + safeClass(actualValue) + "])",
-            actualValue,
-            instanceOf(Comparable.class)
-        );
-        assertThat(
-            "expected value of [" + getField() + "] is not comparable (got [" + expectedValue.getClass() + "])",
-            expectedValue,
-            instanceOf(Comparable.class)
-        );
-        if (actualValue instanceof Long && expectedValue instanceof Integer) {
-            expectedValue = (long) (int) expectedValue;
-        }
-        try {
-            assertThat(errorMessage(), (Comparable) actualValue, lessThan((Comparable) expectedValue));
-        } catch (ClassCastException e) {
-            throw new AssertionError("cast error while checking (" + errorMessage() + "): " + e, e);
-        }
+    protected Logger logger() {
+        return logger;
     }
 
-    private String errorMessage() {
-        return "field [" + getField() + "] is not less than [" + getExpectedValue() + "]";
+    @Override
+    protected String comparisonName() {
+        return "less than";
+    }
+
+    @Override
+    protected <T extends Comparable<T>> Matcher<T> matcher(T c) {
+        return lessThan(c);
     }
 }

@@ -17,6 +17,7 @@ import java.io.IOException;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.equalToIgnoringCase;
+import static org.hamcrest.Matchers.hasToString;
 import static org.junit.Assert.assertThat;
 
 /**
@@ -44,8 +45,10 @@ public class IsFalseAssertion extends Assertion {
             return;
         }
 
-        String actualString = actualValue.toString();
-        assertThat(errorMessage(), actualString, anyOf(equalTo(""), equalToIgnoringCase(Boolean.FALSE.toString()), equalTo("0")));
+        assertThat(
+            errorMessage(),
+            actualValue,
+            hasToString(anyOf(equalTo(""), equalToIgnoringCase(Boolean.FALSE.toString()), equalTo("0"))));
     }
 
     private String errorMessage() {

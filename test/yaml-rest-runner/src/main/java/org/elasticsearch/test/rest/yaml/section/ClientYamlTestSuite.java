@@ -9,6 +9,7 @@ package org.elasticsearch.test.rest.yaml.section;
 
 import org.elasticsearch.client.NodeSelector;
 import org.elasticsearch.common.ParsingException;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.io.Channels;
 import org.elasticsearch.xcontent.NamedXContentRegistry;
 import org.elasticsearch.xcontent.XContentParseException;
@@ -176,7 +177,7 @@ public class ClientYamlTestSuite {
             .map(section -> (DoSection) section)
             .filter(section -> false == section.getExpectedWarningHeaders().isEmpty())
             .filter(section -> false == hasSkipFeature("warnings", testSection, setupSection, teardownSection))
-            .map(section -> String.format(Locale.ROOT, """
+            .map(section -> Strings.format("""
                 attempted to add a [do] with a [warnings] section without a corresponding ["skip": "features": "warnings"] \
                 so runners that do not support the [warnings] section can skip the test at line [%d]\
                 """, section.getLocation().lineNumber()));
@@ -188,7 +189,7 @@ public class ClientYamlTestSuite {
                 .map(section -> (DoSection) section)
                 .filter(section -> false == section.getExpectedWarningHeadersRegex().isEmpty())
                 .filter(section -> false == hasSkipFeature("warnings_regex", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [do] with a [warnings_regex] section without a corresponding \
                     ["skip": "features": "warnings_regex"] so runners that do not support the [warnings_regex] \
                     section can skip the test at line [%d]\
@@ -202,7 +203,7 @@ public class ClientYamlTestSuite {
                 .map(section -> (DoSection) section)
                 .filter(section -> false == section.getAllowedWarningHeaders().isEmpty())
                 .filter(section -> false == hasSkipFeature("allowed_warnings", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [do] with a [allowed_warnings] section without a corresponding \
                     ["skip": "features": "allowed_warnings"] so runners that do not support the [allowed_warnings] \
                     section can skip the test at line [%d]\
@@ -216,7 +217,7 @@ public class ClientYamlTestSuite {
                 .map(section -> (DoSection) section)
                 .filter(section -> false == section.getAllowedWarningHeadersRegex().isEmpty())
                 .filter(section -> false == hasSkipFeature("allowed_warnings_regex", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [do] with a [allowed_warnings_regex] section without a corresponding \
                     ["skip": "features": "allowed_warnings_regex"] so runners that do not support the [allowed_warnings_regex] \
                     section can skip the test at line [%d]\
@@ -230,7 +231,7 @@ public class ClientYamlTestSuite {
                 .map(section -> (DoSection) section)
                 .filter(section -> NodeSelector.ANY != section.getApiCallSection().getNodeSelector())
                 .filter(section -> false == hasSkipFeature("node_selector", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [do] with a [node_selector] section without a corresponding \
                     ["skip": "features": "node_selector"] so runners that do not support the [node_selector] section \
                     can skip the test at line [%d]\
@@ -242,7 +243,7 @@ public class ClientYamlTestSuite {
             sections.stream()
                 .filter(section -> section instanceof ContainsAssertion)
                 .filter(section -> false == hasSkipFeature("contains", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [contains] assertion without a corresponding ["skip": "features": "contains"] \
                     so runners that do not support the [contains] assertion can skip the test at line [%d]\
                     """, section.getLocation().lineNumber()))
@@ -255,7 +256,7 @@ public class ClientYamlTestSuite {
                 .map(section -> (DoSection) section)
                 .filter(section -> false == section.getApiCallSection().getHeaders().isEmpty())
                 .filter(section -> false == hasSkipFeature("headers", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [do] with a [headers] section without a corresponding ["skip": "features": "headers"] \
                     so runners that do not support the [headers] section can skip the test at line [%d]\
                     """, section.getLocation().lineNumber()))
@@ -266,7 +267,7 @@ public class ClientYamlTestSuite {
             sections.stream()
                 .filter(section -> section instanceof CloseToAssertion)
                 .filter(section -> false == hasSkipFeature("close_to", testSection, setupSection, teardownSection))
-                .map(section -> String.format(Locale.ROOT, """
+                .map(section -> Strings.format("""
                     attempted to add a [close_to] assertion without a corresponding ["skip": "features": "close_to"] \
                     so runners that do not support the [close_to] assertion can skip the test at line [%d]\
                     """, section.getLocation().lineNumber()))

@@ -9,7 +9,6 @@ package org.elasticsearch.test.rest.yaml.section;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.elasticsearch.core.Tuple;
 import org.elasticsearch.xcontent.XContentLocation;
 import org.elasticsearch.xcontent.XContentParser;
 
@@ -37,8 +36,8 @@ import static org.junit.Assert.assertThat;
 public class MatchAssertion extends Assertion {
     public static MatchAssertion parse(XContentParser parser) throws IOException {
         XContentLocation location = parser.getTokenLocation();
-        Tuple<String, Object> stringObjectTuple = ParserUtils.parseTuple(parser);
-        return new MatchAssertion(location, stringObjectTuple.v1(), stringObjectTuple.v2());
+        Map.Entry<String, Object> stringObjectTuple = ParserUtils.parseTuple(parser);
+        return new MatchAssertion(location, stringObjectTuple.getKey(), stringObjectTuple.getValue());
     }
 
     private static final Logger logger = LogManager.getLogger(MatchAssertion.class);
