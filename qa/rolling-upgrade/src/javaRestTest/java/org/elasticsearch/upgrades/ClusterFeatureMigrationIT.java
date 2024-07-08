@@ -12,19 +12,32 @@ import com.carrotsearch.randomizedtesting.annotations.Name;
 
 import org.elasticsearch.client.Request;
 import org.elasticsearch.common.xcontent.support.XContentMapValues;
+import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.features.FeatureService;
+import org.elasticsearch.test.cluster.ElasticsearchCluster;
+import org.elasticsearch.test.cluster.FeatureFlag;
+import org.elasticsearch.test.cluster.local.distribution.DistributionType;
+import org.elasticsearch.test.junit.annotations.TestIssueLogging;
+import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
+import org.junit.rules.RuleChain;
+import org.junit.rules.TemporaryFolder;
+import org.junit.rules.TestRule;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
 
-public class ClusterFeatureMigrationIT extends AbstractRollingUpgradeTestCase {
+@TestIssueLogging(value = "org.elasticsearch.cluster.coordination.NodeJoinExecutor:DEBUG", issueUrl = "https://github.com/elastic/elasticsearch/issues/109254")
+public class ClusterFeatureMigrationIT extends ParameterizedRollingUpgradeTestCase {
 
     @Before
     public void checkMigrationVersion() {
@@ -34,8 +47,34 @@ public class ClusterFeatureMigrationIT extends AbstractRollingUpgradeTestCase {
         );
     }
 
+    private static final TemporaryFolder repoDirectory = new TemporaryFolder();
+
+    private static final ElasticsearchCluster cluster = ElasticsearchCluster.local()
+        .distribution(DistributionType.DEFAULT)
+        .version(getOldClusterTestVersion())
+        .nodes(NODE_NUM)
+        .node(0, s -> s.name("non-master1").setting("node.roles", "data"))
+        .setting("path.repo", new Supplier<>() {
+            @Override
+            @SuppressForbidden(reason = "TemporaryFolder only has io.File methods, not nio.File")
+            public String get() {
+                return repoDirectory.getRoot().getPath();
+            }
+        })
+        .setting("xpack.security.enabled", "false")
+        .feature(FeatureFlag.TIME_SERIES_MODE)
+        .build();
+
+    @ClassRule
+    public static TestRule ruleChain = RuleChain.outerRule(repoDirectory).around(cluster);
+
     public ClusterFeatureMigrationIT(@Name("upgradedNodes") int upgradedNodes) {
         super(upgradedNodes);
+    }
+
+    @Override
+    protected ElasticsearchCluster getUpgradeCluster() {
+        return cluster;
     }
 
     public void testClusterFeatureMigration() throws IOException {
