@@ -9,6 +9,7 @@ package org.elasticsearch.xpack.watcher.condition;
 import org.apache.lucene.search.TotalHits;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
@@ -118,6 +119,7 @@ public class CompareConditionSearchTests extends AbstractWatcherIntegrationTestC
             0,
             500L,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {

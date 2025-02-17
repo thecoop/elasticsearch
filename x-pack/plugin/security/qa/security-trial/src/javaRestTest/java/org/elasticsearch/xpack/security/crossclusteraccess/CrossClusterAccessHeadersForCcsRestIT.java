@@ -21,6 +21,7 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchShardsRequest;
 import org.elasticsearch.action.search.SearchShardsResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.search.TransportSearchAction;
 import org.elasticsearch.action.search.TransportSearchShardsAction;
 import org.elasticsearch.client.Request;
@@ -1232,6 +1233,7 @@ public class CrossClusterAccessHeadersForCcsRestIT extends SecurityOnTrialLicens
                                 0,
                                 100,
                                 ShardSearchFailure.EMPTY_ARRAY,
+                                SubsidiaryFailure.EMPTY_ARRAY,
                                 SearchResponse.Clusters.EMPTY
                             )
                         )
