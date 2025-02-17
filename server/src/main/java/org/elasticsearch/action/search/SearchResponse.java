@@ -19,6 +19,7 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.lucene.Lucene;
+import org.elasticsearch.common.util.CollectionUtils;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
 import org.elasticsearch.common.xcontent.ChunkedToXContentHelper;
 import org.elasticsearch.common.xcontent.ChunkedToXContentObject;
@@ -408,7 +409,9 @@ public class SearchResponse extends ActionResponse implements ChunkedToXContentO
     public Iterator<? extends ToXContent> innerToXContentChunked(ToXContent.Params params) {
         return Iterators.concat(
             ChunkedToXContentHelper.chunk(SearchResponse.this::headerToXContent),
-            ChunkedToXContentHelper.array(SUBSIDIARY_FAILURES.getPreferredName(), Iterators.forArray(subsidiaryFailures)),
+            CollectionUtils.isEmpty(subsidiaryFailures)
+                ? Collections.emptyIterator()
+                : ChunkedToXContentHelper.array(SUBSIDIARY_FAILURES.getPreferredName(), Iterators.forArray(subsidiaryFailures)),
             Iterators.single(clusters),
             Iterators.concat(
                 hits.toXContentChunked(params),

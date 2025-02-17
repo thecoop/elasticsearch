@@ -60,6 +60,7 @@ import java.util.concurrent.TimeUnit;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static org.elasticsearch.test.InternalAggregationTestCase.emptyReduceContextBuilder;
+import static org.hamcrest.Matchers.arrayContainingInAnyOrder;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
@@ -131,6 +132,60 @@ public class SearchResponseMergerTests extends ESTestCase {
                 assertEquals(TimeUnit.NANOSECONDS.toMillis(currentRelativeTime), searchResponse.getTook().millis());
             } finally {
                 searchResponse.decRef();
+            }
+        }
+    }
+
+    public void testMergeSubsidiaryFailures() throws InterruptedException {
+        SearchTimeProvider searchTimeProvider = new SearchTimeProvider(0, 0, () -> 0);
+        try (
+            SearchResponseMerger merger = new SearchResponseMerger(
+                0,
+                0,
+                SearchContext.TRACK_TOTAL_HITS_ACCURATE,
+                searchTimeProvider,
+                emptyReduceContextBuilder()
+            )
+        ) {
+            List<SubsidiaryFailure> allFailures = new ArrayList<>();
+
+            for (int i = 0; i < numResponses; i++) {
+                int numFailures = randomIntBetween(0, 3);
+                SubsidiaryFailure[] subsidiaryFailures = new SubsidiaryFailure[numFailures];
+                for (int j = 0; j < numFailures; j++) {
+                    subsidiaryFailures[j] = new SubsidiaryFailure(randomAlphaOfLength(5), new IllegalArgumentException());
+                }
+                Collections.addAll(allFailures, subsidiaryFailures);
+                SearchResponse searchResponse = new SearchResponse(
+                    SearchHits.EMPTY_WITH_TOTAL_HITS,
+                    null,
+                    null,
+                    false,
+                    null,
+                    null,
+                    1,
+                    null,
+                    1,
+                    1,
+                    0,
+                    100L,
+                    ShardSearchFailure.EMPTY_ARRAY,
+                    subsidiaryFailures,
+                    SearchResponse.Clusters.EMPTY
+                );
+                try {
+                    addResponse(merger, searchResponse);
+                } finally {
+                    searchResponse.decRef();
+                }
+            }
+            awaitResponsesAdded();
+            assertEquals(numResponses, merger.numResponses());
+            SearchResponse mergedResponse = merger.getMergedResponse(SearchResponse.Clusters.EMPTY);
+            try {
+                assertThat(mergedResponse.getSubsidiaryFailures(), arrayContainingInAnyOrder(allFailures.toArray()));
+            } finally {
+                mergedResponse.decRef();
             }
         }
     }
