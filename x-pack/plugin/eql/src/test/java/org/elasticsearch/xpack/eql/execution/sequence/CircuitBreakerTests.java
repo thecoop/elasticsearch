@@ -22,6 +22,7 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchResponse.Clusters;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.support.ActionTestUtils;
 import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.TriFunction;
@@ -116,7 +117,7 @@ public class CircuitBreakerTests extends ESTestCase {
             SearchHits searchHits = SearchHits.unpooled(new SearchHit[] { searchHit }, new TotalHits(1, Relation.EQUAL_TO), 0.0f);
             ActionListener.respondAndRelease(
                 l,
-                new SearchResponse(searchHits, null, null, false, false, null, 0, null, 0, 1, 0, 0, null, Clusters.EMPTY)
+                new SearchResponse(searchHits, null, null, false, false, null, 0, null, 0, 1, 0, 0, null, null, Clusters.EMPTY)
             );
         }
 
@@ -471,6 +472,7 @@ public class CircuitBreakerTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 SearchResponse.Clusters.EMPTY,
                 searchRequest.pointInTimeBuilder().getEncodedId()
             );
@@ -524,6 +526,7 @@ public class CircuitBreakerTests extends ESTestCase {
                         0,
                         0,
                         ShardSearchFailure.EMPTY_ARRAY,
+                        SubsidiaryFailure.EMPTY_ARRAY,
                         SearchResponse.Clusters.EMPTY,
                         searchRequest.pointInTimeBuilder().getEncodedId()
                     )
@@ -562,6 +565,7 @@ public class CircuitBreakerTests extends ESTestCase {
                             0,
                             0,
                             failures,
+                            SubsidiaryFailure.EMPTY_ARRAY,
                             SearchResponse.Clusters.EMPTY,
                             searchRequest.pointInTimeBuilder().getEncodedId()
                         )

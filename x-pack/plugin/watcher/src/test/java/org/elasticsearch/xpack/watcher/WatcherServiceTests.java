@@ -17,6 +17,7 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.search.TransportClearScrollAction;
 import org.elasticsearch.action.search.TransportSearchAction;
 import org.elasticsearch.action.search.TransportSearchScrollAction;
@@ -232,6 +233,7 @@ public class WatcherServiceTests extends ESTestCase {
                     0,
                     10,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 )
             );

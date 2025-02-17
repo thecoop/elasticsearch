@@ -13,6 +13,7 @@ import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.ActionType;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.AliasMetadata;
@@ -271,6 +272,7 @@ public class EnrichProcessorFactoryTests extends ESTestCase {
                             0,
                             0,
                             ShardSearchFailure.EMPTY_ARRAY,
+                            SubsidiaryFailure.EMPTY_ARRAY,
                             SearchResponse.Clusters.EMPTY
                         )
                     );

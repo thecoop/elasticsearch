@@ -9,6 +9,7 @@ package org.elasticsearch.xpack.transform.transforms.pivot;
 
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.TermsQueryBuilder;
 import org.elasticsearch.search.SearchHits;
@@ -125,6 +126,7 @@ public class CompositeBucketsChangeCollectorTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             null
         );
         try {

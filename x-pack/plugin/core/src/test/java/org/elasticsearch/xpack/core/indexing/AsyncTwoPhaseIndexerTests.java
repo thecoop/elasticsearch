@@ -14,6 +14,7 @@ import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.search.SearchHits;
@@ -129,6 +130,7 @@ public class AsyncTwoPhaseIndexerTests extends ESTestCase {
                     0,
                     0,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     null
                 )
             );
@@ -280,6 +282,7 @@ public class AsyncTwoPhaseIndexerTests extends ESTestCase {
                     0,
                     0,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     null
                 )
             );

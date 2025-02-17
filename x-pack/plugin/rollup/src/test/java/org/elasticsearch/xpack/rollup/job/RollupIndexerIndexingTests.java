@@ -28,6 +28,7 @@ import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.common.Rounding;
 import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.core.TimeValue;
@@ -882,6 +883,7 @@ public class RollupIndexerIndexingTests extends AggregatorTestCase {
                     0,
                     0,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     null
                 )
             );

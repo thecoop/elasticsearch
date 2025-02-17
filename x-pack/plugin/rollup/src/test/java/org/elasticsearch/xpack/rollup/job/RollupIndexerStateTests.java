@@ -14,6 +14,7 @@ import org.elasticsearch.action.search.SearchPhaseExecutionException;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.bucket.composite.InternalComposite;
@@ -92,7 +93,8 @@ public class RollupIndexerStateTests extends ESTestCase {
                     1,
                     0,
                     0,
-                    new ShardSearchFailure[0],
+                    ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     null
                 )
             );
@@ -444,6 +446,7 @@ public class RollupIndexerStateTests extends ESTestCase {
                             0,
                             0,
                             ShardSearchFailure.EMPTY_ARRAY,
+                            SubsidiaryFailure.EMPTY_ARRAY,
                             null
                         )
                     );
@@ -611,6 +614,7 @@ public class RollupIndexerStateTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 null
             );
         };
@@ -696,6 +700,7 @@ public class RollupIndexerStateTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 null
             );
         };
@@ -829,6 +834,7 @@ public class RollupIndexerStateTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 null
             );
         };

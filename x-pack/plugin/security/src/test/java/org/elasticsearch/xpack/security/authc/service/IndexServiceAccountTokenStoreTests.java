@@ -285,6 +285,7 @@ public class IndexServiceAccountTokenStoreTests extends ESTestCase {
                         0,
                         10,
                         null,
+                        null,
                         null
                     )
                 );

@@ -16,6 +16,7 @@ import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.support.PlainActionFuture;
 import org.elasticsearch.client.internal.Client;
 import org.elasticsearch.common.bytes.BytesReference;
@@ -267,6 +268,7 @@ public class InferenceRunnerTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         Supplier<SearchResponse> withNoHits = () -> new SearchResponse(
@@ -284,6 +286,7 @@ public class InferenceRunnerTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
 

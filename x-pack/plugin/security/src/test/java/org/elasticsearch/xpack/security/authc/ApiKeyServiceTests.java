@@ -499,6 +499,7 @@ public class ApiKeyServiceTests extends ESTestCase {
                 0,
                 10,
                 null,
+                null,
                 null
             );
         };
@@ -658,6 +659,7 @@ public class ApiKeyServiceTests extends ESTestCase {
                     0,
                     10,
                     null,
+                    null,
                     null
                 )
             );
@@ -754,6 +756,7 @@ public class ApiKeyServiceTests extends ESTestCase {
                     1,
                     0,
                     10,
+                    null,
                     null,
                     null
                 )
@@ -1098,6 +1101,7 @@ public class ApiKeyServiceTests extends ESTestCase {
                     1,
                     0,
                     10,
+                    null,
                     null,
                     null
                 )

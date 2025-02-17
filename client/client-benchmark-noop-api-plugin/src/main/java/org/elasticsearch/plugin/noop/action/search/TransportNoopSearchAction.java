@@ -12,6 +12,7 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.HandledTransportAction;
 import org.elasticsearch.common.io.stream.Writeable;
@@ -56,6 +57,7 @@ public class TransportNoopSearchAction extends HandledTransportAction<SearchRequ
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 SearchResponse.Clusters.EMPTY
             )
         );

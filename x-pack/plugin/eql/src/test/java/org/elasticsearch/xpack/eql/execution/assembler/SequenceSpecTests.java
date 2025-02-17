@@ -222,7 +222,7 @@ public class SequenceSpecTests extends ESTestCase {
             );
             ActionListener.respondAndRelease(
                 l,
-                new SearchResponse(searchHits, null, null, false, false, null, 0, null, 0, 1, 0, 0, null, Clusters.EMPTY)
+                new SearchResponse(searchHits, null, null, false, false, null, 0, null, 0, 1, 0, 0, null, null, Clusters.EMPTY)
             );
         }
 

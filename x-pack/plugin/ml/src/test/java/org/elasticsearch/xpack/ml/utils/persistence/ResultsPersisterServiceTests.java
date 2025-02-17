@@ -19,6 +19,7 @@ import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.search.TransportSearchAction;
 import org.elasticsearch.client.internal.Client;
 import org.elasticsearch.client.internal.OriginSettingClient;
@@ -102,6 +103,7 @@ public class ResultsPersisterServiceTests extends ESTestCase {
         0,
         1L,
         ShardSearchFailure.EMPTY_ARRAY,
+        SubsidiaryFailure.EMPTY_ARRAY,
         null
     );
 

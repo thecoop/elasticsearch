@@ -217,6 +217,7 @@ public class TransportSamlInvalidateSessionActionTests extends SamlTestCase {
                                 0,
                                 1,
                                 null,
+                                null,
                                 null
                             )
                         );
@@ -240,6 +241,7 @@ public class TransportSamlInvalidateSessionActionTests extends SamlTestCase {
                             1,
                             0,
                             1,
+                            null,
                             null,
                             null
                         )

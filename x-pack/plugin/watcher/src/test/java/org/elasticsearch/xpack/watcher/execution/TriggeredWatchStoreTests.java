@@ -254,6 +254,7 @@ public class TriggeredWatchStoreTests extends ESTestCase {
                         0,
                         1,
                         null,
+                        null,
                         null
                     )
                 );

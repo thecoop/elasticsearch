@@ -346,6 +346,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     100L,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -424,6 +425,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     randomLong(),
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -509,6 +511,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     randomLong(),
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -590,6 +593,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     randomLong(),
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -657,6 +661,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     randomLong(),
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
 
@@ -820,6 +825,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     skipped,
                     randomLong(),
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponseTests.randomClusters()
                 );
 
@@ -968,6 +974,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     1L,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -992,6 +999,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     1L,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -1048,6 +1056,7 @@ public class SearchResponseMergerTests extends ESTestCase {
                     0,
                     1L,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 try {
@@ -1149,6 +1158,7 @@ public class SearchResponseMergerTests extends ESTestCase {
             0,
             33,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
 
@@ -1174,6 +1184,7 @@ public class SearchResponseMergerTests extends ESTestCase {
             skipped,
             44,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
 
@@ -1199,6 +1210,7 @@ public class SearchResponseMergerTests extends ESTestCase {
             skipped,
             55,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {

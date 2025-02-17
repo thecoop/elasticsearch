@@ -116,6 +116,7 @@ public class SearchResponseTests extends ESTestCase {
                     skippedShards,
                     tookInMillis,
                     shardSearchFailures,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     clusters
                 );
             } finally {
@@ -384,6 +385,7 @@ public class SearchResponseTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 SearchResponse.Clusters.EMPTY
             );
             try {
@@ -426,6 +428,7 @@ public class SearchResponseTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 new SearchResponse.Clusters(5, 3, 2)
             );
             try {
@@ -476,6 +479,7 @@ public class SearchResponseTests extends ESTestCase {
                 2,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 createCCSClusterObject(
                     4,
                     3,

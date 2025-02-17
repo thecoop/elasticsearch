@@ -15,6 +15,7 @@ import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.aggregations.AggregationsPlugin;
 import org.elasticsearch.client.internal.Client;
 import org.elasticsearch.common.ValidationException;
@@ -365,6 +366,7 @@ public class PivotTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             null
         );
     }
@@ -410,7 +412,8 @@ public class PivotTests extends ESTestCase {
                         searchFailures.size() > 0 ? 0 : 5,
                         0,
                         0,
-                        searchFailures.toArray(new ShardSearchFailure[searchFailures.size()]),
+                        searchFailures.toArray(ShardSearchFailure.EMPTY_ARRAY),
+                        null,
                         null
                     )
                 );

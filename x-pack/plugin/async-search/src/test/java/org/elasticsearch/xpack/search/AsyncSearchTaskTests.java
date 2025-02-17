@@ -14,6 +14,7 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchShard;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.search.TransportSearchAction;
 import org.elasticsearch.action.support.ActionTestUtils;
 import org.elasticsearch.common.breaker.CircuitBreaker;
@@ -486,6 +487,7 @@ public class AsyncSearchTaskTests extends ESTestCase {
             skippedShards,
             100,
             failures,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
     }

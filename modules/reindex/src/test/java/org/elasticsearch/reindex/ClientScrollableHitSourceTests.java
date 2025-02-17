@@ -180,6 +180,7 @@ public class ClientScrollableHitSourceTests extends ESTestCase {
             0,
             randomLong(),
             null,
+            null,
             SearchResponse.Clusters.EMPTY
         );
     }

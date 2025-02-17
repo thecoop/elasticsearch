@@ -21,6 +21,7 @@ import org.elasticsearch.action.search.SearchPhaseExecutionException;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.client.internal.ParentTaskAssigningClient;
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.cluster.service.ClusterService;
@@ -253,6 +254,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
                     0,
                     0,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 )
             );
@@ -402,6 +404,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {
@@ -531,6 +534,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {
@@ -626,6 +630,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {
@@ -724,6 +729,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
         try {
@@ -969,6 +975,7 @@ public class TransformIndexerFailureHandlingTests extends ESTestCase {
             0,
             0,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
     }

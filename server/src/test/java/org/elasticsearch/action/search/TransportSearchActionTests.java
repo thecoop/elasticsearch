@@ -1037,6 +1037,7 @@ public class TransportSearchActionTests extends ESTestCase {
                 0,
                 100,
                 ShardSearchFailure.EMPTY_ARRAY,
+                SubsidiaryFailure.EMPTY_ARRAY,
                 SearchResponse.Clusters.EMPTY,
                 null
             )

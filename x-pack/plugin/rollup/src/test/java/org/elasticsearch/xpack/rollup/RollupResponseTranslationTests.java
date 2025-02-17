@@ -577,6 +577,7 @@ public class RollupResponseTranslationTests extends AggregatorTestCase {
                 0,
                 10,
                 null,
+                null,
                 null
             ),
             null
@@ -595,6 +596,7 @@ public class RollupResponseTranslationTests extends AggregatorTestCase {
                 1,
                 0,
                 10,
+                null,
                 null,
                 null
             ),

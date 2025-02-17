@@ -341,7 +341,7 @@ public class DatabaseNodeServiceTests extends ESTestCase {
             }
 
             SearchHits hits = SearchHits.unpooled(new SearchHit[] { hit }, new TotalHits(1, TotalHits.Relation.EQUAL_TO), 1f);
-            SearchResponse searchResponse = new SearchResponse(hits, null, null, false, null, null, 0, null, 1, 1, 0, 1L, null, null);
+            SearchResponse searchResponse = new SearchResponse(hits, null, null, false, null, null, 0, null, 1, 1, 0, 1L, null, null, null);
             toRelease.add(searchResponse::decRef);
             @SuppressWarnings("unchecked")
             ActionFuture<SearchResponse> actionFuture = mock(ActionFuture.class);

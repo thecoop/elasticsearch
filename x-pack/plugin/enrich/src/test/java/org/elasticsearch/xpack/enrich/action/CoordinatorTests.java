@@ -18,6 +18,7 @@ import org.elasticsearch.action.search.MultiSearchResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
+import org.elasticsearch.action.search.SubsidiaryFailure;
 import org.elasticsearch.action.support.single.shard.SingleShardRequest;
 import org.elasticsearch.client.internal.ElasticsearchClient;
 import org.elasticsearch.core.Tuple;
@@ -385,6 +386,7 @@ public class CoordinatorTests extends ESTestCase {
             0,
             100,
             ShardSearchFailure.EMPTY_ARRAY,
+            SubsidiaryFailure.EMPTY_ARRAY,
             SearchResponse.Clusters.EMPTY
         );
     }

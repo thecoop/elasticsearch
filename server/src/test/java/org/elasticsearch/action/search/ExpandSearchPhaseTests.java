@@ -187,6 +187,7 @@ public class ExpandSearchPhaseTests extends ESTestCase {
                     0,
                     0,
                     ShardSearchFailure.EMPTY_ARRAY,
+                    SubsidiaryFailure.EMPTY_ARRAY,
                     SearchResponse.Clusters.EMPTY
                 );
                 ActionListener.respondAndRelease(

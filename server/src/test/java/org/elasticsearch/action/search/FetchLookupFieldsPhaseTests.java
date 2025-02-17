@@ -121,6 +121,7 @@ public class FetchLookupFieldsPhaseTests extends ESTestCase {
                                 0,
                                 randomNonNegativeLong(),
                                 ShardSearchFailure.EMPTY_ARRAY,
+                                SubsidiaryFailure.EMPTY_ARRAY,
                                 SearchResponseTests.randomClusters(),
                                 null
                             ),
