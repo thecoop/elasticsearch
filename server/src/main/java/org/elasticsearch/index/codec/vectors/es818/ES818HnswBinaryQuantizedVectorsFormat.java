@@ -30,6 +30,7 @@ import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.search.TaskExecutor;
 import org.apache.lucene.util.hnsw.HnswGraph;
+import org.elasticsearch.index.store.ESIOContext;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -124,6 +125,7 @@ public class ES818HnswBinaryQuantizedVectorsFormat extends KnnVectorsFormat {
 
     @Override
     public KnnVectorsReader fieldsReader(SegmentReadState state) throws IOException {
+        state = new SegmentReadState(state.directory, state.segmentInfo, state.fieldInfos, new ESIOContext(state.context, true), state.segmentSuffix);
         return new Lucene99HnswVectorsReader(state, flatVectorsFormat.fieldsReader(state));
     }
 

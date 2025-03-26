@@ -151,6 +151,10 @@ public class FsDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
         }
 
         static boolean useDelegate(String name, IOContext ioContext) {
+            if (ioContext instanceof ESIOContext esContext && esContext.forceDirectIO()) {
+                return true;
+            }
+
             if (ioContext == Store.READONCE_CHECKSUM) {
                 // If we're just reading the footer for the checksum then mmap() isn't really necessary, and it's desperately inefficient
                 // if pre-loading is enabled on this file.
