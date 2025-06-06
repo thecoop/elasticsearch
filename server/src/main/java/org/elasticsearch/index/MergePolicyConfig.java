@@ -152,7 +152,7 @@ public final class MergePolicyConfig {
     private static final String INDEX_COMPOUND_FORMAT_SETTING_KEY = "index.compound_format";
     public static final Setting<CompoundFileThreshold> INDEX_COMPOUND_FORMAT_SETTING = new Setting<>(
         INDEX_COMPOUND_FORMAT_SETTING_KEY,
-        "1gb",
+        "false",
         MergePolicyConfig::parseCompoundFormat,
         Property.Dynamic,
         Property.IndexScope
