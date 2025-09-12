@@ -48,10 +48,9 @@ import org.elasticsearch.index.IndexVersion;
 import org.elasticsearch.index.IndexVersions;
 import org.elasticsearch.index.codec.vectors.ES813FlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES813Int8FlatVectorFormat;
-import org.elasticsearch.index.codec.vectors.ES814ScalarQuantizedVectorsFormat;
+import org.elasticsearch.index.codec.vectors.ES814HnswScalarQuantizedVectorsFormat;
 import org.elasticsearch.index.codec.vectors.ES815BitFlatVectorFormat;
-import org.elasticsearch.index.codec.vectors.ES815BitFlatVectorsFormat;
-import org.elasticsearch.index.codec.vectors.ES920HnswComposableKnnVectorsFormat;
+import org.elasticsearch.index.codec.vectors.ES815HnswBitVectorsFormat;
 import org.elasticsearch.index.codec.vectors.MaxDimOverridingKnnVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsFormat;
@@ -1714,11 +1713,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
         @Override
         public KnnVectorsFormat getVectorsFormat(ElementType elementType) {
             assert elementType == ElementType.FLOAT;
-            return new ES920HnswComposableKnnVectorsFormat(
-                new ES814ScalarQuantizedVectorsFormat(confidenceInterval, 4, true),
-                m,
-                efConstruction
-            );
+            return new ES814HnswScalarQuantizedVectorsFormat(m, efConstruction, confidenceInterval, 4, true);
         }
 
         @Override
@@ -1866,11 +1861,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
         @Override
         public KnnVectorsFormat getVectorsFormat(ElementType elementType) {
             assert elementType == ElementType.FLOAT;
-            return new ES920HnswComposableKnnVectorsFormat(
-                new ES814ScalarQuantizedVectorsFormat(confidenceInterval, 7, false),
-                m,
-                efConstruction
-            );
+            return new ES814HnswScalarQuantizedVectorsFormat(m, efConstruction, confidenceInterval, 7, false);
         }
 
         @Override
@@ -1958,7 +1949,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
         @Override
         public KnnVectorsFormat getVectorsFormat(ElementType elementType) {
             if (elementType == ElementType.BIT) {
-                return new ES920HnswComposableKnnVectorsFormat(new ES815BitFlatVectorsFormat(), m, efConstruction);
+                return new ES815HnswBitVectorsFormat(m, efConstruction);
             }
             return new Lucene99HnswVectorsFormat(m, efConstruction, 1, null);
         }
@@ -2851,10 +2842,10 @@ public class DenseVectorFieldMapper extends FieldMapper {
      * @return the custom kNN vectors format that is configured for this field or
      * {@code null} if the default format should be used.
      */
-    public KnnVectorsFormat getKnnVectorsFormatForField() {
+    public KnnVectorsFormat getKnnVectorsFormatForField(KnnVectorsFormat defaultFormat) {
         final KnnVectorsFormat format;
         if (indexOptions == null) {
-            format = new ES920HnswComposableKnnVectorsFormat(new ES815BitFlatVectorsFormat(), 16, 100);
+            format = fieldType().element.elementType() == ElementType.BIT ? new ES815HnswBitVectorsFormat() : defaultFormat;
         } else {
             format = indexOptions.getVectorsFormat(fieldType().element.elementType());
         }
