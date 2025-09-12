@@ -162,6 +162,7 @@ public abstract class ComposablePerFieldKnnVectorsFormat extends KnnVectorsForma
             if (possibleComposable instanceof MaxDimOverridingKnnVectorsFormat wrapped) {
                 possibleComposable = wrapped.getDelegate();
             }
+
             // We expect the provided format to be the fully composed writer, with all values set
             if (possibleComposable instanceof ComposableKnnVectorsFormat composableFormat) {
                 logger.info(
@@ -176,7 +177,8 @@ public abstract class ComposablePerFieldKnnVectorsFormat extends KnnVectorsForma
                 logger.info("regular format for field [{}] [{}] [{}]", field.name, format.getName(), format.getClass().getCanonicalName());
                 formatName = format.getName();
             }
-            // NOTE This is the composed name, maybe we instead put the Lucene acceptable name here and the composed name in another place?
+            // put the composed format name in the Lucene field too, so we get a hard-fail
+            // if it tries to load in other contexts
             field.putAttribute(PER_FIELD_FORMAT_KEY, formatName);
             Integer suffix;
 
@@ -250,57 +252,9 @@ public abstract class ComposablePerFieldKnnVectorsFormat extends KnnVectorsForma
                             // check if its a "composable" name
                             String composedFormatName = fi.getAttribute(PER_FIELD_COMPOSED_FORMAT_KEY);
                             if (composedFormatName != null) {
+                                assert composedFormatName.equals(formatName) : composedFormatName + " != " + formatName;
                                 logger.info("got composed format format for field: {} is: {}", fi.name, composedFormatName);
-                                // extract composable elements
-                                String[] parts = formatName.split("\\+");
-                                String baseFormatName = parts[0];
-                                KnnVectorsFormat baseFormat = KnnVectorsFormat.forName(baseFormatName);
-                                if (baseFormat instanceof ComposableKnnVectorsFormat composable) {
-                                    // we know either it's a directory modifier, or some inner format
-                                    // first check for directory modifier
-                                    ComposableKnnVectorsFormat outterFormat = composable;
-                                    for (int i = 1; i < parts.length; i++) {
-                                        // check if it's a directory modifier
-                                        DirectoryModifier dm = DirectoryModifier.fromString(parts[i]);
-                                        if (dm != null) {
-                                            outterFormat.setDirectoryModifier(dm);
-                                        } else {
-                                            // assume its another knn format, could be composable or not
-                                            KnnVectorsFormat innerFormat = KnnVectorsFormat.forName(parts[i]);
-                                            outterFormat.setInnerVectorsFormat(innerFormat);
-                                            if (innerFormat instanceof ComposableKnnVectorsFormat innerComposable) {
-                                                outterFormat = innerComposable;
-                                            } else {
-                                                // we are done, verify that there are no more parts
-                                                if (i != parts.length - 1) {
-                                                    throw new IllegalStateException(
-                                                        "found non-composable format: "
-                                                            + innerFormat.getName()
-                                                            + " in the middle of the composed format name: "
-                                                            + formatName
-                                                            + " for field: "
-                                                            + fieldName
-                                                    );
-                                                }
-                                            }
-                                        }
-
-                                    }
-                                } else {
-                                    throw new IllegalStateException(
-                                        "expected ComposableKnnVectorsFormat for field: "
-                                            + fieldName
-                                            + " got: "
-                                            + baseFormat.getClass().getSimpleName()
-                                            + " for format name: "
-                                            + baseFormatName
-                                            + " full format name: "
-                                            + formatName
-                                            + " composed format name: "
-                                            + composedFormatName
-                                    );
-                                }
-                                format = baseFormat;
+                                format = loadComposedKnnFormat(composedFormatName, fieldName);
                             } else {
                                 // standard format
                                 format = KnnVectorsFormat.forName(formatName);
@@ -320,6 +274,58 @@ public abstract class ComposablePerFieldKnnVectorsFormat extends KnnVectorsForma
                     IOUtils.closeWhileHandlingException(formats.values());
                 }
             }
+        }
+
+        private static KnnVectorsFormat loadComposedKnnFormat(String formatName, String fieldName) {
+            // extract composable elements
+            String[] parts = formatName.split("\\+");
+            String baseFormatName = parts[0];
+            KnnVectorsFormat baseFormat = KnnVectorsFormat.forName(baseFormatName);
+            if (baseFormat instanceof ComposableKnnVectorsFormat composable) {
+                // we know either it's a directory modifier, or some inner format
+                // first check for directory modifier
+                ComposableKnnVectorsFormat composedFormat = composable;
+                for (int i = 1; i < parts.length; i++) {
+                    switch (parts[i]) {
+                        case "ES92DirectIO" -> composedFormat.useDirectIO();
+                        default -> {
+                            // try to load an inner kNN format:
+                            // assume its another knn format, could be composable or not
+                            KnnVectorsFormat innerFormat = KnnVectorsFormat.forName(parts[i]);
+                            composedFormat.setInnerVectorsFormat(innerFormat);
+
+                            if (innerFormat instanceof ComposableKnnVectorsFormat innerComposable) {
+                                // subsequent modifiers apply to the inner one
+                                composedFormat = innerComposable;
+                            } else {
+                                // we are done, verify that there are no more parts
+                                if (i != parts.length - 1) {
+                                    throw new IllegalStateException(
+                                        "found non-composable format: "
+                                            + innerFormat.getName()
+                                            + " in the middle of the composed format name: "
+                                            + formatName
+                                            + " for field: "
+                                            + fieldName
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                throw new IllegalStateException(
+                    "expected ComposableKnnVectorsFormat for field: "
+                        + fieldName
+                        + " got: "
+                        + baseFormat.getClass().getSimpleName()
+                        + " for format name: "
+                        + baseFormatName
+                        + " composed format name: "
+                        + formatName
+                );
+            }
+            return baseFormat;
         }
 
         private FieldsReader(final FieldsReader fieldsReader) {
@@ -411,55 +417,5 @@ public abstract class ComposablePerFieldKnnVectorsFormat extends KnnVectorsForma
             }
             IOUtils.close(readers);
         }
-    }
-
-    public enum DirectoryModifier {
-        DirectIO,
-        None;
-
-        static DirectoryModifier fromString(String name) {
-            for (DirectoryModifier dm : values()) {
-                if (dm.name().equalsIgnoreCase(name)) {
-                    return dm;
-                }
-            }
-            return null;
-        }
-    }
-
-    public abstract static class ComposableKnnVectorsFormat extends KnnVectorsFormat {
-        /**
-         * Sole constructor
-         *
-         * @param name
-         */
-        protected ComposableKnnVectorsFormat(String name) {
-            super(name);
-        }
-
-        abstract DirectoryModifier getDirectoryModifier();
-
-        final String getComposedFormatName() {
-            StringBuilder sb = new StringBuilder();
-            sb.append(getName());
-            if (getDirectoryModifier() != null && getDirectoryModifier() != DirectoryModifier.None) {
-                sb.append("+").append(getDirectoryModifier().name());
-            }
-            KnnVectorsFormat inner = getInnerVectorsFormat();
-            if (inner != null) {
-                if (inner instanceof ComposableKnnVectorsFormat composable) {
-                    sb.append("+").append(composable.getComposedFormatName());
-                } else {
-                    sb.append("+").append(inner.getName());
-                }
-            }
-            return sb.toString();
-        }
-
-        abstract KnnVectorsFormat getInnerVectorsFormat();
-
-        abstract void setInnerVectorsFormat(KnnVectorsFormat format);
-
-        abstract void setDirectoryModifier(DirectoryModifier modifier);
     }
 }
