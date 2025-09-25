@@ -35,6 +35,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KnnVectorValues;
 import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.AcceptDocs;
@@ -52,6 +53,7 @@ import org.elasticsearch.common.logging.LogConfigurator;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.IndexModule;
 import org.elasticsearch.index.IndexSettings;
+import org.elasticsearch.index.codec.vectors.BFloat16;
 import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es818.ES818HnswBinaryQuantizedVectorsFormat;
 import org.elasticsearch.index.shard.ShardId;
@@ -85,6 +87,11 @@ public class ES92HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseKnnVe
     @Override
     protected Codec getCodec() {
         return codec;
+    }
+
+    @Override
+    protected VectorEncoding randomVectorEncoding() {
+        return VectorEncoding.FLOAT32;
     }
 
     public void testToString() {
