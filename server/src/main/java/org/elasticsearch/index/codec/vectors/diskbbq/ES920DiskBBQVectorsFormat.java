@@ -18,7 +18,7 @@ import org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat;
 import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.elasticsearch.index.codec.vectors.OptimizedScalarQuantizer;
-import org.elasticsearch.index.codec.vectors.es93.DirectIOLucene99FlatVectorsFormat;
+import org.elasticsearch.index.codec.vectors.es93.DirectIOFormatWrapper;
 
 import java.io.IOException;
 import java.util.Map;
@@ -62,7 +62,7 @@ public class ES920DiskBBQVectorsFormat extends KnnVectorsFormat {
     private static final FlatVectorsFormat defaultRawVectorFormat = new Lucene99FlatVectorsFormat(
         FlatVectorScorerUtil.getLucene99FlatVectorsScorer()
     );
-    private static final FlatVectorsFormat directIORawVectorFormat = new DirectIOLucene99FlatVectorsFormat(
+    private static final FlatVectorsFormat directIORawVectorFormat = DirectIOFormatWrapper.forLucene99FlatVectorsFormat(
         FlatVectorScorerUtil.getLucene99FlatVectorsScorer()
     );
     private static final Map<String, FlatVectorsFormat> supportedFormats = Map.of(

@@ -20,6 +20,8 @@
 package org.elasticsearch.index.codec.vectors.es93;
 
 import org.apache.lucene.codecs.hnsw.FlatVectorsFormat;
+import org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat;
+import org.elasticsearch.index.codec.vectors.es92.ES92BFloat16FlatVectorsFormat;
 
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -29,15 +31,42 @@ public class ES93HnswBinaryQuantizedVectorsFormat extends ES93GenericHnswVectors
 
     public static final String NAME = "ES93HnswBinaryQuantizedVectorsFormat";
 
-    private static final FlatVectorsFormat defaultFlatVectorsFormat = new ES93BinaryQuantizedVectorsFormat(false);
-    private static final FlatVectorsFormat directIOFlatVectorsFormat = new ES93BinaryQuantizedVectorsFormat(true);
-
-    private static final Map<String, FlatVectorsFormat> supportedFormats = Map.of(
-        defaultFlatVectorsFormat.getName(),
-        defaultFlatVectorsFormat,
-        directIOFlatVectorsFormat.getName(),
-        directIOFlatVectorsFormat
+    private static final Map<String, FlatVectorsFormat> supportedFormats = Map.ofEntries(
+        entryForFormat(false, false),
+        entryForFormat(false, true),
+        entryForFormat(true, false),
+        entryForFormat(true, true)
     );
+
+    private static Map.Entry<String, FlatVectorsFormat> entryForFormat(boolean bfloat16, boolean directIO) {
+        FlatVectorsFormat format = constructQuantizedVectorsFormat(bfloat16, directIO);
+        return Map.entry(format.getName(), format);
+    }
+
+    private static String constructFlatFormatName(boolean bfloat16, boolean directIO) {
+        StringBuilder sb = new StringBuilder();
+        if (directIO) sb.append("DirectIO");
+        if (bfloat16) sb.append("BFloat16");
+        return sb.append(ES93BinaryQuantizedVectorsFormat.NAME).toString();
+    }
+
+    private static FlatVectorsFormat constructQuantizedVectorsFormat(boolean bfloat16, boolean directIO) {
+        FlatVectorsFormat rawVectorFormat;
+        if (bfloat16) {
+            if (directIO) {
+                rawVectorFormat = DirectIOFormatWrapper.forES93BFloat16FlatVectorsFormat(ES93BinaryQuantizedVectorsFormat.scorer);
+            } else {
+                rawVectorFormat = new ES92BFloat16FlatVectorsFormat(ES93BinaryQuantizedVectorsFormat.scorer);
+            }
+        } else {
+            if (directIO) {
+                rawVectorFormat = DirectIOFormatWrapper.forLucene99FlatVectorsFormat(ES93BinaryQuantizedVectorsFormat.scorer);
+            } else {
+                rawVectorFormat = new Lucene99FlatVectorsFormat(ES93BinaryQuantizedVectorsFormat.scorer);
+            }
+        }
+        return new ES93BinaryQuantizedVectorsFormat(constructFlatFormatName(bfloat16, directIO), rawVectorFormat);
+    }
 
     /** Constructs a format using default graph construction parameters */
     public ES93HnswBinaryQuantizedVectorsFormat() {
@@ -68,20 +97,27 @@ public class ES93HnswBinaryQuantizedVectorsFormat extends ES93GenericHnswVectors
         super(NAME, maxConn, beamWidth, numMergeWorkers, mergeExec);
     }
 
-    private final AtomicReference<FlatVectorsFormat> writeFormat = new AtomicReference<>();
+    private boolean directIO;
+    private boolean bfloat16;
 
-    public void useDirectIO() {
-        if (writeFormat.compareAndSet(null, directIOFlatVectorsFormat) == false) {
-            throw new IllegalStateException("Flat format has already been set");
-        }
+    public ES93HnswBinaryQuantizedVectorsFormat useDirectIO() {
+        directIO = true;
+        return this;
     }
+
+    public ES93HnswBinaryQuantizedVectorsFormat useBFloat16() {
+        bfloat16 = true;
+        return this;
+    }
+
+    private final AtomicReference<FlatVectorsFormat> writeFormat = new AtomicReference<>();
 
     @Override
     protected FlatVectorsFormat writeFlatVectorsFormat() {
         var format = writeFormat.get();
         if (format == null) {
-            format = defaultFlatVectorsFormat;
-            writeFormat.set(defaultFlatVectorsFormat);
+            format = constructQuantizedVectorsFormat(bfloat16, directIO);
+            writeFormat.set(format);
         }
         return format;
     }

@@ -463,7 +463,6 @@ module org.elasticsearch.server {
             org.elasticsearch.index.codec.vectors.es818.ES818HnswBinaryQuantizedVectorsFormat,
             org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat,
             org.elasticsearch.index.codec.vectors.es93.ES93HnswBinaryQuantizedVectorsFormat;
-            ES920DiskBBQVectorsFormat;
 
     provides org.apache.lucene.codecs.Codec
         with

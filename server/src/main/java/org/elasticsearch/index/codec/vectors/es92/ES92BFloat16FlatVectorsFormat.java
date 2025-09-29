@@ -24,17 +24,9 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
-import org.apache.lucene.store.FlushInfo;
-import org.apache.lucene.store.IOContext;
-import org.apache.lucene.store.MergeInfo;
-import org.elasticsearch.common.util.set.Sets;
 import org.elasticsearch.index.codec.vectors.AbstractFlatVectorsFormat;
-import org.elasticsearch.index.codec.vectors.MergeReaderWrapper;
-import org.elasticsearch.index.codec.vectors.es818.DirectIOHint;
-import org.elasticsearch.index.store.FsDirectoryFactory;
 
 import java.io.IOException;
-import java.util.Set;
 
 public final class ES92BFloat16FlatVectorsFormat extends AbstractFlatVectorsFormat {
 
@@ -65,64 +57,8 @@ public final class ES92BFloat16FlatVectorsFormat extends AbstractFlatVectorsForm
         return new ES92BFloat16FlatVectorsWriter(state, vectorsScorer);
     }
 
-    static boolean shouldUseDirectIO(SegmentReadState state) {
-        return USE_DIRECT_IO && FsDirectoryFactory.isHybridFs(state.directory);
-    }
-
     @Override
     public FlatVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        if (shouldUseDirectIO(state) && state.context.context() == IOContext.Context.DEFAULT) {
-            // only override the context for the random-access use case
-            SegmentReadState directIOState = new SegmentReadState(
-                state.directory,
-                state.segmentInfo,
-                state.fieldInfos,
-                new DirectIOContext(state.context.hints()),
-                state.segmentSuffix
-            );
-            // Use mmap for merges and direct I/O for searches.
-            // TODO: Open the mmap file with sequential access instead of random (current behavior).
-            return new MergeReaderWrapper(
-                new ES92BFloat16FlatVectorsReader(directIOState, vectorsScorer),
-                new ES92BFloat16FlatVectorsReader(state, vectorsScorer)
-            );
-        } else {
-            return new ES92BFloat16FlatVectorsReader(state, vectorsScorer);
-        }
-    }
-
-    static class DirectIOContext implements IOContext {
-
-        final Set<FileOpenHint> hints;
-
-        DirectIOContext(Set<FileOpenHint> hints) {
-            // always add DirectIOHint to the hints given
-            this.hints = Sets.union(hints, Set.of(DirectIOHint.INSTANCE));
-        }
-
-        @Override
-        public Context context() {
-            return Context.DEFAULT;
-        }
-
-        @Override
-        public MergeInfo mergeInfo() {
-            return null;
-        }
-
-        @Override
-        public FlushInfo flushInfo() {
-            return null;
-        }
-
-        @Override
-        public Set<FileOpenHint> hints() {
-            return hints;
-        }
-
-        @Override
-        public IOContext withHints(FileOpenHint... hints) {
-            return new DirectIOContext(Set.of(hints));
-        }
+        return new ES92BFloat16FlatVectorsReader(state, vectorsScorer);
     }
 }

@@ -20,19 +20,8 @@
 package org.elasticsearch.index.codec.vectors.es92;
 
 import org.apache.lucene.codecs.hnsw.FlatVectorScorerUtil;
-import org.apache.lucene.codecs.hnsw.FlatVectorsFormat;
-import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
-import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
-import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
-import org.apache.lucene.index.SegmentReadState;
-import org.apache.lucene.index.SegmentWriteState;
-import org.elasticsearch.index.codec.vectors.AbstractFlatVectorsFormat;
 import org.elasticsearch.index.codec.vectors.OptimizedScalarQuantizer;
-import org.elasticsearch.index.codec.vectors.es818.ES818BinaryFlatVectorsScorer;
-import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsReader;
-import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsWriter;
-
-import java.io.IOException;
+import org.elasticsearch.index.codec.vectors.es93.ES93BinaryQuantizedVectorsFormat;
 
 /**
  * Copied from Lucene, replace with Lucene's implementation sometime after Lucene 10
@@ -87,35 +76,12 @@ import java.io.IOException;
   *  <li>The sparse vector information, if required, mapping vector ordinal to doc ID
   * </ul>
  */
-public class ES92BinaryQuantizedBFloat16VectorsFormat extends AbstractFlatVectorsFormat {
+public class ES92BinaryQuantizedBFloat16VectorsFormat extends ES93BinaryQuantizedVectorsFormat {
 
     public static final String NAME = "ES92BinaryQuantizedBFloat16VectorsFormat";
 
-    private static final FlatVectorsFormat rawVectorFormat = new ES92BFloat16FlatVectorsFormat(
-        FlatVectorScorerUtil.getLucene99FlatVectorsScorer()
-    );
-
-    private static final ES818BinaryFlatVectorsScorer scorer = new ES818BinaryFlatVectorsScorer(
-        FlatVectorScorerUtil.getLucene99FlatVectorsScorer()
-    );
-
     /** Creates a new instance with the default number of vectors per cluster. */
     public ES92BinaryQuantizedBFloat16VectorsFormat() {
-        super(NAME);
-    }
-
-    @Override
-    protected FlatVectorsScorer flatVectorsScorer() {
-        return scorer;
-    }
-
-    @Override
-    public FlatVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
-        return new ES818BinaryQuantizedVectorsWriter(scorer, rawVectorFormat.fieldsWriter(state), state);
-    }
-
-    @Override
-    public FlatVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        return new ES818BinaryQuantizedVectorsReader(state, rawVectorFormat.fieldsReader(state), scorer);
+        super(NAME, new ES92BFloat16FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer()));
     }
 }

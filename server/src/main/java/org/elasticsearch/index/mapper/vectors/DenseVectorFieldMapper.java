@@ -2047,7 +2047,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
         KnnVectorsFormat getVectorsFormat(ElementType elementType) {
             var format = new ES93HnswBinaryQuantizedVectorsFormat(m, efConstruction);
             if (elementType == ElementType.BFLOAT16) {
-
+                format.useBFloat16();
             } else if (elementType != ElementType.FLOAT) {
                 throw new AssertionError();
             }

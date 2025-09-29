@@ -24,7 +24,6 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsFormat;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
-import org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat;
 import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.elasticsearch.index.codec.vectors.AbstractFlatVectorsFormat;
@@ -94,15 +93,13 @@ public class ES93BinaryQuantizedVectorsFormat extends AbstractFlatVectorsFormat 
 
     private final FlatVectorsFormat rawVectorFormat;
 
-    private static final ES818BinaryFlatVectorsScorer scorer = new ES818BinaryFlatVectorsScorer(
+    static final ES818BinaryFlatVectorsScorer scorer = new ES818BinaryFlatVectorsScorer(
         FlatVectorScorerUtil.getLucene99FlatVectorsScorer()
     );
 
-    public ES93BinaryQuantizedVectorsFormat(boolean useDirectIO) {
-        super(useDirectIO ? "DirectIO" + NAME : NAME);
-        rawVectorFormat = useDirectIO
-            ? new DirectIOLucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer())
-            : new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
+    public ES93BinaryQuantizedVectorsFormat(String name, FlatVectorsFormat rawVectorFormat) {
+        super(name);
+        this.rawVectorFormat = rawVectorFormat;
     }
 
     @Override
