@@ -32,6 +32,8 @@ import org.elasticsearch.index.codec.vectors.ES813Int8FlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES814HnswScalarQuantizedVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsFormat;
+import org.elasticsearch.index.codec.vectors.es92.ES92BinaryQuantizedBFloat16VectorsFormat;
+import org.elasticsearch.index.codec.vectors.es92.ES92HnswBinaryQuantizedBFloat16VectorsFormat;
 import org.elasticsearch.index.codec.vectors.es93.ES93HnswBinaryQuantizedVectorsFormat;
 import org.elasticsearch.logging.Level;
 import org.elasticsearch.logging.LogManager;
@@ -110,9 +112,17 @@ public class KnnIndexTester {
         } else {
             if (args.quantizeBits() == 1) {
                 if (args.indexType() == IndexType.FLAT) {
-                    format = new ES818BinaryQuantizedVectorsFormat();
+                    if (args.rawVectorSize() == 16) {
+                        format = new ES92BinaryQuantizedBFloat16VectorsFormat();
+                    } else {
+                        format = new ES818BinaryQuantizedVectorsFormat();
+                    }
                 } else {
-                    format = new ES93HnswBinaryQuantizedVectorsFormat(args.hnswM(), args.hnswEfConstruction(), 1, null);
+                    if (args.rawVectorSize() == 16) {
+                        format = new ES92HnswBinaryQuantizedBFloat16VectorsFormat(args.hnswM(), args.hnswEfConstruction(), 1, null);
+                    } else {
+                        format = new ES93HnswBinaryQuantizedVectorsFormat(args.hnswM(), args.hnswEfConstruction(), 1, null);
+                    }
                 }
             } else if (args.quantizeBits() < 32) {
                 if (args.indexType() == IndexType.FLAT) {

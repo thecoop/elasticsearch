@@ -46,6 +46,7 @@ import org.elasticsearch.common.xcontent.support.XContentMapValues;
 import org.elasticsearch.features.NodeFeature;
 import org.elasticsearch.index.IndexVersion;
 import org.elasticsearch.index.IndexVersions;
+import org.elasticsearch.index.codec.vectors.BFloat16;
 import org.elasticsearch.index.codec.vectors.ES813FlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES813Int8FlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES814HnswScalarQuantizedVectorsFormat;
@@ -53,6 +54,7 @@ import org.elasticsearch.index.codec.vectors.ES815BitFlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES815HnswBitVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsFormat;
+import org.elasticsearch.index.codec.vectors.es92.ES92BinaryQuantizedBFloat16VectorsFormat;
 import org.elasticsearch.index.codec.vectors.es93.ES93HnswBinaryQuantizedVectorsFormat;
 import org.elasticsearch.index.fielddata.FieldDataContext;
 import org.elasticsearch.index.fielddata.IndexFieldData;
@@ -452,6 +454,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
     public enum ElementType {
         BYTE,
         FLOAT,
+        BFLOAT16,
         BIT;
 
         public static ElementType fromString(String name) {
@@ -466,6 +469,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
 
     public static final Element BYTE_ELEMENT = new ByteElement();
     public static final Element FLOAT_ELEMENT = new FloatElement();
+    public static final Element BFLOAT16_ELEMENT = new BFloat16Element();
     public static final Element BIT_ELEMENT = new BitElement();
 
     public static final Map<String, ElementType> namesToElementType = Map.of(
@@ -473,6 +477,8 @@ public class DenseVectorFieldMapper extends FieldMapper {
         ElementType.BYTE,
         ElementType.FLOAT.toString(),
         ElementType.FLOAT,
+        ElementType.BFLOAT16.toString(),
+        ElementType.BFLOAT16,
         ElementType.BIT.toString(),
         ElementType.BIT
     );
@@ -482,6 +488,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
         public static Element getElement(ElementType elementType) {
             return switch (elementType) {
                 case FLOAT -> FLOAT_ELEMENT;
+                case BFLOAT16 -> BFLOAT16_ELEMENT;
                 case BYTE -> BYTE_ELEMENT;
                 case BIT -> BIT_ELEMENT;
             };
@@ -1047,6 +1054,29 @@ public class DenseVectorFieldMapper extends FieldMapper {
         }
     }
 
+    private static class BFloat16Element extends FloatElement {
+
+        @Override
+        public ElementType elementType() {
+            return ElementType.BFLOAT16;
+        }
+
+        @Override
+        public void writeValue(ByteBuffer byteBuffer, float value) {
+            byteBuffer.putShort(BFloat16.floatToBFloat16(value));
+        }
+
+        @Override
+        public void readAndWriteValue(ByteBuffer byteBuffer, XContentBuilder b) throws IOException {
+            b.value(BFloat16.bFloat16ToFloat(byteBuffer.getShort()));
+        }
+
+        @Override
+        public int getNumBytes(int dimensions) {
+            return dimensions * BFloat16.BYTES;
+        }
+    }
+
     private static class BitElement extends ByteElement {
 
         @Override
@@ -1114,7 +1144,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
             @Override
             float score(float similarity, ElementType elementType, int dim) {
                 return switch (elementType) {
-                    case BYTE, FLOAT -> 1f / (1f + similarity * similarity);
+                    case BYTE, FLOAT, BFLOAT16 -> 1f / (1f + similarity * similarity);
                     case BIT -> (dim - similarity) / dim;
                 };
             }
@@ -1129,14 +1159,14 @@ public class DenseVectorFieldMapper extends FieldMapper {
             float score(float similarity, ElementType elementType, int dim) {
                 assert elementType != ElementType.BIT;
                 return switch (elementType) {
-                    case BYTE, FLOAT -> (1 + similarity) / 2f;
+                    case BYTE, FLOAT, BFLOAT16 -> (1 + similarity) / 2f;
                     default -> throw new IllegalArgumentException("Unsupported element type [" + elementType + "]");
                 };
             }
 
             @Override
             public VectorSimilarityFunction vectorSimilarityFunction(IndexVersion indexVersion, ElementType elementType) {
-                return indexVersion.onOrAfter(NORMALIZE_COSINE) && ElementType.FLOAT.equals(elementType)
+                return indexVersion.onOrAfter(NORMALIZE_COSINE) && (elementType == ElementType.FLOAT || elementType == ElementType.BFLOAT16)
                     ? VectorSimilarityFunction.DOT_PRODUCT
                     : VectorSimilarityFunction.COSINE;
             }
@@ -1146,7 +1176,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
             float score(float similarity, ElementType elementType, int dim) {
                 return switch (elementType) {
                     case BYTE -> 0.5f + similarity / (float) (dim * (1 << 15));
-                    case FLOAT -> (1 + similarity) / 2f;
+                    case FLOAT, BFLOAT16 -> (1 + similarity) / 2f;
                     default -> throw new IllegalArgumentException("Unsupported element type [" + elementType + "]");
                 };
             }
@@ -1160,7 +1190,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
             @Override
             float score(float similarity, ElementType elementType, int dim) {
                 return switch (elementType) {
-                    case BYTE, FLOAT -> similarity < 0 ? 1 / (1 + -1 * similarity) : similarity + 1;
+                    case BYTE, FLOAT, BFLOAT16 -> similarity < 0 ? 1 / (1 + -1 * similarity) : similarity + 1;
                     default -> throw new IllegalArgumentException("Unsupported element type [" + elementType + "]");
                 };
             }
@@ -1469,7 +1499,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
 
             @Override
             public boolean supportsElementType(ElementType elementType) {
-                return elementType == ElementType.FLOAT;
+                return elementType == ElementType.FLOAT || elementType == ElementType.BFLOAT16;
             }
 
             @Override
@@ -1493,7 +1523,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
 
             @Override
             public boolean supportsElementType(ElementType elementType) {
-                return elementType == ElementType.FLOAT;
+                return elementType == ElementType.FLOAT || elementType == ElementType.BFLOAT16;
             }
 
             @Override
@@ -2015,8 +2045,12 @@ public class DenseVectorFieldMapper extends FieldMapper {
 
         @Override
         KnnVectorsFormat getVectorsFormat(ElementType elementType) {
-            assert elementType == ElementType.FLOAT;
             var format = new ES93HnswBinaryQuantizedVectorsFormat(m, efConstruction);
+            if (elementType == ElementType.BFLOAT16) {
+
+            } else if (elementType != ElementType.FLOAT) {
+                throw new AssertionError();
+            }
             if (onDiskRescore) {
                 format.useDirectIO();
             }
@@ -2085,8 +2119,11 @@ public class DenseVectorFieldMapper extends FieldMapper {
 
         @Override
         KnnVectorsFormat getVectorsFormat(ElementType elementType) {
-            assert elementType == ElementType.FLOAT;
-            return new ES818BinaryQuantizedVectorsFormat();
+            return switch (elementType) {
+                case FLOAT -> new ES818BinaryQuantizedVectorsFormat();
+                case BFLOAT16 -> new ES92BinaryQuantizedBFloat16VectorsFormat();
+                default -> throw new AssertionError();
+            };
         }
 
         @Override
@@ -2328,7 +2365,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
             }
             Query knnQuery = switch (element.elementType()) {
                 case BYTE -> createExactKnnByteQuery(queryVector.asByteVector());
-                case FLOAT -> createExactKnnFloatQuery(queryVector.asFloatVector());
+                case FLOAT, BFLOAT16 -> createExactKnnFloatQuery(queryVector.asFloatVector());
                 case BIT -> createExactKnnBitQuery(queryVector.asByteVector());
             };
             if (vectorSimilarity != null) {
@@ -2409,7 +2446,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
                     knnSearchStrategy,
                     hnswEarlyTermination
                 );
-                case FLOAT -> createKnnFloatQuery(
+                case FLOAT, BFLOAT16 -> createKnnFloatQuery(
                     queryVector.asFloatVector(),
                     k,
                     numCands,

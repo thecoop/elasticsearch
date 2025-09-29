@@ -53,6 +53,7 @@ public class MapperFeatures implements FeatureSpecification {
     public static final NodeFeature MULTI_FIELD_UNICODE_OPTIMISATION_FIX = new NodeFeature("mapper.multi_field.unicode_optimisation_fix");
     static final NodeFeature PATTERN_TEXT_RENAME = new NodeFeature("mapper.pattern_text_rename");
     public static final NodeFeature ON_DISK_RESCORING = new NodeFeature("mapper.vectors.on_disk_rescoring");
+    public static final NodeFeature BBQ_BFLOAT16 = new NodeFeature("mapper.bbq_bfloat16");
 
     @Override
     public Set<NodeFeature> getTestFeatures() {
@@ -91,7 +92,8 @@ public class MapperFeatures implements FeatureSpecification {
             MULTI_FIELD_UNICODE_OPTIMISATION_FIX,
             MATCH_ONLY_TEXT_BLOCK_LOADER_FIX,
             PATTERN_TEXT_RENAME,
-            ON_DISK_RESCORING
+            ON_DISK_RESCORING,
+            BBQ_BFLOAT16
         );
     }
 }
