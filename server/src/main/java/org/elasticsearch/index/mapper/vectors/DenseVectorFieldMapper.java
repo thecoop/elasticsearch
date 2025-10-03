@@ -54,7 +54,7 @@ import org.elasticsearch.index.codec.vectors.ES815BitFlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.ES815HnswBitVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es818.ES818BinaryQuantizedVectorsFormat;
-import org.elasticsearch.index.codec.vectors.es818.ES818HnswBinaryQuantizedVectorsFormat;
+import org.elasticsearch.index.codec.vectors.es93.ES93HnswBinaryQuantizedVectorsFormat;
 import org.elasticsearch.index.fielddata.FieldDataContext;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.mapper.ArraySourceValueFetcher;
@@ -390,6 +390,7 @@ public class DenseVectorFieldMapper extends FieldMapper {
                 return new BBQHnswIndexOptions(
                     Lucene99HnswVectorsFormat.DEFAULT_MAX_CONN,
                     Lucene99HnswVectorsFormat.DEFAULT_BEAM_WIDTH,
+                    false,
                     new RescoreVector(DEFAULT_OVERSAMPLE)
                 );
             } else if (defaultInt8Hnsw) {
@@ -1456,8 +1457,11 @@ public class DenseVectorFieldMapper extends FieldMapper {
                 if (efConstructionNode == null) {
                     efConstructionNode = Lucene99HnswVectorsFormat.DEFAULT_BEAM_WIDTH;
                 }
+                Object onDiskRescoreNode = indexOptionsMap.remove("on_disk_rescore");
+
                 int m = XContentMapValues.nodeIntegerValue(mNode);
                 int efConstruction = XContentMapValues.nodeIntegerValue(efConstructionNode);
+                boolean onDiskRescore = XContentMapValues.nodeBooleanValue(onDiskRescoreNode, false);
                 RescoreVector rescoreVector = null;
                 if (hasRescoreIndexVersion(indexVersion)) {
                     rescoreVector = RescoreVector.fromIndexOptions(indexOptionsMap, indexVersion);
@@ -1465,8 +1469,9 @@ public class DenseVectorFieldMapper extends FieldMapper {
                         rescoreVector = new RescoreVector(DEFAULT_OVERSAMPLE);
                     }
                 }
+
                 MappingParser.checkNoRemainingFields(fieldName, indexOptionsMap);
-                return new BBQHnswIndexOptions(m, efConstruction, rescoreVector);
+                return new BBQHnswIndexOptions(m, efConstruction, onDiskRescore, rescoreVector);
             }
 
             @Override
@@ -2020,17 +2025,19 @@ public class DenseVectorFieldMapper extends FieldMapper {
     public static class BBQHnswIndexOptions extends QuantizedIndexOptions {
         private final int m;
         private final int efConstruction;
+        private final boolean onDiskRescore;
 
-        public BBQHnswIndexOptions(int m, int efConstruction, RescoreVector rescoreVector) {
+        public BBQHnswIndexOptions(int m, int efConstruction, boolean onDiskRescore, RescoreVector rescoreVector) {
             super(VectorIndexType.BBQ_HNSW, rescoreVector);
             this.m = m;
             this.efConstruction = efConstruction;
+            this.onDiskRescore = onDiskRescore;
         }
 
         @Override
         KnnVectorsFormat getVectorsFormat(ElementType elementType) {
             assert elementType == ElementType.FLOAT;
-            return new ES818HnswBinaryQuantizedVectorsFormat(m, efConstruction);
+            return new ES93HnswBinaryQuantizedVectorsFormat(m, efConstruction, onDiskRescore);
         }
 
         @Override
@@ -2042,12 +2049,15 @@ public class DenseVectorFieldMapper extends FieldMapper {
         @Override
         boolean doEquals(DenseVectorIndexOptions other) {
             BBQHnswIndexOptions that = (BBQHnswIndexOptions) other;
-            return m == that.m && efConstruction == that.efConstruction && Objects.equals(rescoreVector, that.rescoreVector);
+            return m == that.m
+                && efConstruction == that.efConstruction
+                && onDiskRescore == that.onDiskRescore
+                && Objects.equals(rescoreVector, that.rescoreVector);
         }
 
         @Override
         int doHashCode() {
-            return Objects.hash(m, efConstruction, rescoreVector);
+            return Objects.hash(m, efConstruction, onDiskRescore, rescoreVector);
         }
 
         @Override
@@ -2061,6 +2071,9 @@ public class DenseVectorFieldMapper extends FieldMapper {
             builder.field("type", type);
             builder.field("m", m);
             builder.field("ef_construction", efConstruction);
+            if (onDiskRescore) {
+                builder.field("on_disk_rescore", true);
+            }
             if (rescoreVector != null) {
                 rescoreVector.toXContent(builder, params);
             }
