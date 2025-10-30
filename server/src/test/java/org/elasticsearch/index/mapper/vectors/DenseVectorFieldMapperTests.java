@@ -2789,7 +2789,6 @@ public class DenseVectorFieldMapperTests extends SyntheticVectorsMapperTestCase 
     }
 
     public void testKnnQuantizedFlatVectorsFormat() throws IOException {
-        boolean setConfidenceInterval = randomBoolean();
         float confidenceInterval = (float) randomDoubleBetween(0.90f, 1.0f, true);
         for (String quantizedFlatFormat : new String[] { "int8_flat", "int4_flat" }) {
             MapperService mapperService = createMapperService(fieldMapping(b -> {
@@ -2799,9 +2798,6 @@ public class DenseVectorFieldMapperTests extends SyntheticVectorsMapperTestCase 
                 b.field("similarity", "dot_product");
                 b.startObject("index_options");
                 b.field("type", quantizedFlatFormat);
-                if (setConfidenceInterval) {
-                    b.field("confidence_interval", confidenceInterval);
-                }
                 b.endObject();
             }));
             CodecService codecService = new CodecService(mapperService, BigArrays.NON_RECYCLING_INSTANCE);
@@ -2819,9 +2815,7 @@ public class DenseVectorFieldMapperTests extends SyntheticVectorsMapperTestCase 
             }
             VectorScorerFactory factory = VectorScorerFactory.instance().orElse(null);
             String expectedString = "ES813Int8FlatVectorFormat(name=ES813Int8FlatVectorFormat, innerFormat="
-                + "ES814ScalarQuantizedVectorsFormat(name=ES814ScalarQuantizedVectorsFormat,"
-                + " confidenceInterval="
-                + (setConfidenceInterval ? Float.toString(confidenceInterval) : (quantizedFlatFormat.equals("int4_flat") ? "0.0" : null))
+                + "ES814ScalarQuantizedVectorsFormat(name=ES814ScalarQuantizedVectorsFormat"
                 + ", bits="
                 + (quantizedFlatFormat.equals("int4_flat") ? 4 : 7)
                 + ", compressed="
