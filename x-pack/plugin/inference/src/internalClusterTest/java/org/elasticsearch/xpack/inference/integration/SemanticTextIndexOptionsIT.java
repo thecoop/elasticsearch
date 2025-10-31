@@ -119,6 +119,7 @@ public class SemanticTextIndexOptionsIT extends ESIntegTestCase {
         IndexOptions indexOptions = new DenseVectorFieldMapper.Int8HnswIndexOptions(
             randomIntBetween(1, 100),
             randomIntBetween(1, 10_000),
+            null,
             false,
             null
         );
