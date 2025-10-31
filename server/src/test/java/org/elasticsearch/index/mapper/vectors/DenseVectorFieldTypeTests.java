@@ -74,10 +74,7 @@ public class DenseVectorFieldTypeTests extends FieldTypeTestCase {
     public static DenseVectorFieldMapper.DenseVectorIndexOptions randomFlatIndexOptions() {
         return randomFrom(
             new DenseVectorFieldMapper.FlatIndexOptions(),
-            new DenseVectorFieldMapper.Int8FlatIndexOptions(
-                randomFrom((Float) null, 0f, (float) randomDoubleBetween(0.9, 1.0, true)),
-                randomFrom((DenseVectorFieldMapper.RescoreVector) null, randomRescoreVector())
-            ),
+            new DenseVectorFieldMapper.Int8FlatIndexOptions(randomFrom((DenseVectorFieldMapper.RescoreVector) null, randomRescoreVector())),
             new DenseVectorFieldMapper.Int4FlatIndexOptions(randomFrom((DenseVectorFieldMapper.RescoreVector) null, randomRescoreVector()))
         );
     }
@@ -121,7 +118,6 @@ public class DenseVectorFieldTypeTests extends FieldTypeTestCase {
                 ),
                 new DenseVectorFieldMapper.FlatIndexOptions(),
                 new DenseVectorFieldMapper.Int8FlatIndexOptions(
-                    randomFrom((Float) null, 0f, (float) randomDoubleBetween(0.9, 1.0, true)),
                     randomFrom((DenseVectorFieldMapper.RescoreVector) null, randomRescoreVector())
                 ),
                 new DenseVectorFieldMapper.Int4FlatIndexOptions(
@@ -162,13 +158,13 @@ public class DenseVectorFieldTypeTests extends FieldTypeTestCase {
             new DenseVectorFieldMapper.Int8HnswIndexOptions(
                 randomIntBetween(1, 100),
                 randomIntBetween(1, 10_000),
-                randomFrom((Float) null, 0f, (float) randomDoubleBetween(0.9, 1.0, true)),
+                randomBoolean(),
                 rescoreVector
             ),
             new DenseVectorFieldMapper.Int4HnswIndexOptions(
                 randomIntBetween(1, 100),
                 randomIntBetween(1, 10_000),
-                randomFrom((Float) null, 0f, (float) randomDoubleBetween(0.9, 1.0, true)),
+                randomBoolean(),
                 rescoreVector
             ),
             new DenseVectorFieldMapper.BBQHnswIndexOptions(

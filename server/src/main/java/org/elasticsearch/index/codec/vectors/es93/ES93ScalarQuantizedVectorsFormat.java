@@ -88,8 +88,8 @@ public class ES93ScalarQuantizedVectorsFormat extends KnnVectorsFormat {
         return NAME
             + "(name="
             + NAME
-            + ", encoding="
-            + encoding
+            + ", bits="
+            + encoding.getBits()
             + ", flatVectorScorer="
             + flatVectorScorer
             + ", rawVectorFormat="
