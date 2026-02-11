@@ -41,22 +41,22 @@ public class ByteVectorScorerFactoryTests extends AbstractVectorTestCase {
 
     public void testZeros() throws IOException {
         assumeTrue(notSupportedMsg(), supported());
-        testRandomSupplier(MMapDirectory.DEFAULT_MAX_CHUNK_SIZE, byte[]::new);
+        testRandomSupplier(MMapDirectory.DEFAULT_MAX_CHUNK_SIZE, byte[]::new, DOT_PRODUCT, EUCLIDEAN, MAXIMUM_INNER_PRODUCT);
     }
 
     public void testRandom() throws IOException {
         assumeTrue(notSupportedMsg(), supported());
-        testRandomSupplier(MMapDirectory.DEFAULT_MAX_CHUNK_SIZE, ESTestCase::randomByteArrayOfLength);
+        testRandomSupplier(MMapDirectory.DEFAULT_MAX_CHUNK_SIZE, ESTestCase::randomByteArrayOfLength, VectorSimilarityType.values());
     }
 
     public void testRandomMaxChunkSizeSmall() throws IOException {
         assumeTrue(notSupportedMsg(), supported());
         long maxChunkSize = randomLongBetween(32, 128);
         logger.info("maxChunkSize=" + maxChunkSize);
-        testRandomSupplier(maxChunkSize, ESTestCase::randomByteArrayOfLength);
+        testRandomSupplier(maxChunkSize, ESTestCase::randomByteArrayOfLength, VectorSimilarityType.values());
     }
 
-    void testRandomSupplier(long maxChunkSize, IntFunction<byte[]> bytesSupplier) throws IOException {
+    void testRandomSupplier(long maxChunkSize, IntFunction<byte[]> bytesSupplier, VectorSimilarityType... types) throws IOException {
         var factory = AbstractVectorTestCase.factory.get();
 
         try (Directory dir = new MMapDirectory(createTempDir("testRandom"), maxChunkSize)) {
@@ -77,8 +77,7 @@ public class ByteVectorScorerFactoryTests extends AbstractVectorTestCase {
                 for (int times = 0; times < TIMES; times++) {
                     int idx0 = randomIntBetween(0, size - 1);
                     int idx1 = randomIntBetween(0, size - 1); // may be the same as idx0 - which is ok.
-                    // not COSINE, as we normalize vectors to always use dot product
-                    for (var sim : List.of(DOT_PRODUCT, EUCLIDEAN, MAXIMUM_INNER_PRODUCT)) {
+                    for (var sim : types) {
                         var values = vectorValues(dims, size, in, sim.function());
                         float expected = luceneScore(sim, vectors[idx0], vectors[idx1]);
 

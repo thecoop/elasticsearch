@@ -21,6 +21,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
+import static org.apache.lucene.index.VectorSimilarityFunction.COSINE;
 import static org.apache.lucene.index.VectorSimilarityFunction.DOT_PRODUCT;
 import static org.apache.lucene.index.VectorSimilarityFunction.EUCLIDEAN;
 import static org.apache.lucene.index.VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
@@ -163,7 +164,7 @@ public abstract sealed class ByteVectorScorerSupplier implements RandomVectorSco
     public static final class CosineSupplier extends ByteVectorScorerSupplier {
 
         public CosineSupplier(MemorySegmentAccessInput input, ByteVectorValues values) {
-            super(input, values, EUCLIDEAN);
+            super(input, values, COSINE);
         }
 
         private static float normalize(float cosine) {
