@@ -76,12 +76,35 @@ public class VectorScorerByteBenchmark {
     @Param
     public VectorImplementation implementation;
 
-    @Param({ "DOT_PRODUCT", "EUCLIDEAN" })
+    @Param({ "COSINE", "DOT_PRODUCT", "EUCLIDEAN" })
     public VectorSimilarityType function;
 
     private Path path;
     private Directory dir;
     private IndexInput in;
+
+    private static class ScalarCosine implements UpdateableRandomVectorScorer {
+        private final byte[] vec1;
+        private final byte[] vec2;
+
+        private ScalarCosine(byte[] vec1, byte[] vec2) {
+            this.vec1 = vec1;
+            this.vec2 = vec2;
+        }
+
+        @Override
+        public float score(int node) {
+            return (1 + cosine(vec1, vec2)) / 2;
+        }
+
+        @Override
+        public int maxOrd() {
+            return 0;
+        }
+
+        @Override
+        public void setScoringOrdinal(int node) {}
+    }
 
     private static class ScalarDotProduct implements UpdateableRandomVectorScorer {
         private final byte[] vec1;
@@ -173,6 +196,7 @@ public class VectorScorerByteBenchmark {
                 byte[] vec2 = values.vectorValue(1).clone();
 
                 scorer = switch (function) {
+                    case COSINE -> new ScalarCosine(vec1, vec2);
                     case DOT_PRODUCT -> new ScalarDotProduct(vec1, vec2);
                     case EUCLIDEAN -> new ScalarSquareDistance(vec1, vec2);
                     default -> throw new IllegalArgumentException(function + " not supported");
@@ -209,6 +233,21 @@ public class VectorScorerByteBenchmark {
     @Benchmark
     public float scoreQuery() throws IOException {
         return queryScorer.score(1);
+    }
+
+    static float cosine(byte[] a, byte[] b) {
+        int sum = 0;
+        int norm1 = 0;
+        int norm2 = 0;
+
+        for (int i = 0; i < a.length; i++) {
+            byte elem1 = a[i];
+            byte elem2 = b[i];
+            sum += elem1 * elem2;
+            norm1 += elem1 * elem1;
+            norm2 += elem2 * elem2;
+        }
+        return (float) (sum / Math.sqrt((double) norm1 * (double) norm2));
     }
 
     static float dotProduct(byte[] a, byte[] b) {

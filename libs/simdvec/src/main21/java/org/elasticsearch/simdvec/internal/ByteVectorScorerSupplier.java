@@ -160,6 +160,47 @@ public abstract sealed class ByteVectorScorerSupplier implements RandomVectorSco
         };
     }
 
+    public static final class CosineSupplier extends ByteVectorScorerSupplier {
+
+        public CosineSupplier(MemorySegmentAccessInput input, ByteVectorValues values) {
+            super(input, values, EUCLIDEAN);
+        }
+
+        private static float normalize(float cosine) {
+            return (1 + cosine) / 2;
+        }
+
+        @Override
+        float scoreFromSegments(MemorySegment a, MemorySegment b) {
+            return normalize(Similarities.cosineI8(a, b, dims));
+        }
+
+        @Override
+        void bulkScoreFromSegment(
+            MemorySegment vectors,
+            int vectorLength,
+            int vectorPitch,
+            int firstOrd,
+            MemorySegment ordinals,
+            MemorySegment scores,
+            int numNodes
+        ) {
+            long firstByteOffset = (long) firstOrd * vectorPitch;
+            var firstVector = vectors.asSlice(firstByteOffset, vectorPitch);
+            Similarities.cosineI8BulkWithOffsets(vectors, firstVector, dims, vectorPitch, ordinals, numNodes, scores);
+
+            for (int i = 0; i < numNodes; ++i) {
+                float squareDistance = scores.getAtIndex(ValueLayout.JAVA_FLOAT, i);
+                scores.setAtIndex(ValueLayout.JAVA_FLOAT, i, normalize(squareDistance));
+            }
+        }
+
+        @Override
+        public CosineSupplier copy() {
+            return new CosineSupplier(input.clone(), values);
+        }
+    }
+
     public static final class EuclideanSupplier extends ByteVectorScorerSupplier {
 
         public EuclideanSupplier(MemorySegmentAccessInput input, ByteVectorValues values) {

@@ -66,7 +66,8 @@ final class VectorScorerFactoryImpl implements VectorScorerFactory {
         if (input instanceof MemorySegmentAccessInput msInput) {
             checkInvariants(values.size(), values.dimension(), input);
             return switch (similarityType) {
-                case COSINE, DOT_PRODUCT -> Optional.of(new ByteVectorScorerSupplier.DotProductSupplier(msInput, values));
+                case COSINE -> Optional.of(new ByteVectorScorerSupplier.CosineSupplier(msInput, values));
+                case DOT_PRODUCT -> Optional.of(new ByteVectorScorerSupplier.DotProductSupplier(msInput, values));
                 case EUCLIDEAN -> Optional.of(new ByteVectorScorerSupplier.EuclideanSupplier(msInput, values));
                 case MAXIMUM_INNER_PRODUCT -> Optional.of(new ByteVectorScorerSupplier.MaxInnerProductSupplier(msInput, values));
             };

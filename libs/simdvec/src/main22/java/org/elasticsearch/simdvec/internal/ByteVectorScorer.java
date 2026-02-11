@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.util.Optional;
 
+import static org.elasticsearch.simdvec.internal.Similarities.cosineI8;
+import static org.elasticsearch.simdvec.internal.Similarities.cosineI8BulkWithOffsets;
 import static org.elasticsearch.simdvec.internal.Similarities.dotProductI8;
 import static org.elasticsearch.simdvec.internal.Similarities.dotProductI8BulkWithOffsets;
 import static org.elasticsearch.simdvec.internal.Similarities.squareDistanceI8;
@@ -46,7 +48,8 @@ public abstract sealed class ByteVectorScorer extends RandomVectorScorer.Abstrac
             checkInvariants(values.size(), values.getVectorByteLength(), input);
 
             return switch (sim) {
-                case COSINE, DOT_PRODUCT -> Optional.of(new DotProductScorer(msInput, values, queryVector));
+                case COSINE -> Optional.of(new CosineScorer(msInput, values, queryVector));
+                case DOT_PRODUCT -> Optional.of(new DotProductScorer(msInput, values, queryVector));
                 case EUCLIDEAN -> Optional.of(new EuclideanScorer(msInput, values, queryVector));
                 case MAXIMUM_INNER_PRODUCT -> Optional.of(new MaxInnerProductScorer(msInput, values, queryVector));
             };
@@ -117,6 +120,40 @@ public abstract sealed class ByteVectorScorer extends RandomVectorScorer.Abstrac
                 var scoresSeg = MemorySegment.ofArray(scores);
 
                 dotProductI8BulkWithOffsets(vectorsSeg, query, dimensions, vectorByteSize, ordinalsSeg, numNodes, scoresSeg);
+
+                for (int i = 0; i < numNodes; ++i) {
+                    scores[i] = normalize(scores[i]);
+                }
+            }
+        }
+    }
+
+    public static final class CosineScorer extends ByteVectorScorer {
+        public CosineScorer(MemorySegmentAccessInput in, ByteVectorValues values, byte[] query) {
+            super(in, values, query);
+        }
+
+        private static float normalize(float cosine) {
+            return (1 + cosine) / 2;
+        }
+
+        @Override
+        public float score(int node) throws IOException {
+            checkOrdinal(node);
+            float sqDist = cosineI8(query, getSegment(node), dimensions);
+            return normalize(sqDist);
+        }
+
+        @Override
+        public void bulkScore(int[] nodes, float[] scores, int numNodes) throws IOException {
+            MemorySegment vectorsSeg = input.segmentSliceOrNull(0, input.length());
+            if (vectorsSeg == null) {
+                super.bulkScore(nodes, scores, numNodes);
+            } else {
+                var ordinalsSeg = MemorySegment.ofArray(nodes);
+                var scoresSeg = MemorySegment.ofArray(scores);
+
+                cosineI8BulkWithOffsets(vectorsSeg, query, dimensions, vectorByteSize, ordinalsSeg, numNodes, scoresSeg);
 
                 for (int i = 0; i < numNodes; ++i) {
                     scores[i] = normalize(scores[i]);

@@ -89,12 +89,41 @@ public class VectorScorerByteBulkBenchmark {
     @Param
     public VectorImplementation implementation;
 
-    @Param({ "DOT_PRODUCT", "EUCLIDEAN" })
+    @Param({ "COSINE", "DOT_PRODUCT", "EUCLIDEAN" })
     public VectorSimilarityType function;
 
     private Path path;
     private Directory dir;
     private IndexInput in;
+
+    private static class ScalarCosine implements UpdateableRandomVectorScorer {
+        private final ByteVectorValues values;
+
+        private byte[] queryVector;
+
+        private ScalarCosine(ByteVectorValues values) {
+            this.values = values;
+        }
+
+        @Override
+        public float score(int ordinal) throws IOException {
+            return normalize(cosine(queryVector, values.vectorValue(ordinal)));
+        }
+
+        private float normalize(float cosine) {
+            return (1 + cosine) / 2;
+        }
+
+        @Override
+        public int maxOrd() {
+            return 0;
+        }
+
+        @Override
+        public void setScoringOrdinal(int targetOrd) throws IOException {
+            queryVector = values.vectorValue(targetOrd).clone();
+        }
+    }
 
     private static class ScalarDotProduct implements UpdateableRandomVectorScorer {
         private final ByteVectorValues values;
@@ -212,6 +241,7 @@ public class VectorScorerByteBulkBenchmark {
         switch (implementation) {
             case SCALAR:
                 scorer = switch (function) {
+                    case COSINE -> new ScalarCosine(values);
                     case DOT_PRODUCT -> new ScalarDotProduct(values);
                     case EUCLIDEAN -> new ScalarSquareDistance(values);
                     default -> throw new IllegalArgumentException(function + " not supported");
@@ -280,6 +310,21 @@ public class VectorScorerByteBulkBenchmark {
     public float[] scoreQueryMultipleRandomBulk() throws IOException {
         queryScorer.bulkScore(ordinals, scores, ordinals.length);
         return scores;
+    }
+
+    static float cosine(byte[] a, byte[] b) {
+        int sum = 0;
+        int norm1 = 0;
+        int norm2 = 0;
+
+        for (int i = 0; i < a.length; i++) {
+            byte elem1 = a[i];
+            byte elem2 = b[i];
+            sum += elem1 * elem2;
+            norm1 += elem1 * elem1;
+            norm2 += elem2 * elem2;
+        }
+        return (float) (sum / Math.sqrt((double) norm1 * (double) norm2));
     }
 
     static int dotProduct(byte[] a, byte[] b) {
