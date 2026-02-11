@@ -56,7 +56,7 @@ public class ByteBinaryDenseVector implements DenseVector {
     }
 
     @Override
-    public int dotProduct(byte[] queryVector) {
+    public double dotProduct(byte[] queryVector) {
         return ESVectorUtil.dotProduct(queryVector, vectorValue);
     }
 

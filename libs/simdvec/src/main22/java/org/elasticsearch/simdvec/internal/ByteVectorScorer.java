@@ -103,7 +103,7 @@ public abstract sealed class ByteVectorScorer extends RandomVectorScorer.Abstrac
         @Override
         public float score(int node) throws IOException {
             checkOrdinal(node);
-            int dotProduct = dotProductI8(query, getSegment(node), dimensions);
+            float dotProduct = dotProductI8(query, getSegment(node), dimensions);
             return normalize(dotProduct);
         }
 
@@ -133,7 +133,7 @@ public abstract sealed class ByteVectorScorer extends RandomVectorScorer.Abstrac
         @Override
         public float score(int node) throws IOException {
             checkOrdinal(node);
-            int sqDist = squareDistanceI8(query, getSegment(node), dimensions);
+            float sqDist = squareDistanceI8(query, getSegment(node), dimensions);
             return VectorUtil.normalizeDistanceToUnitInterval(sqDist);
         }
 
@@ -163,7 +163,7 @@ public abstract sealed class ByteVectorScorer extends RandomVectorScorer.Abstrac
         @Override
         public float score(int node) throws IOException {
             checkOrdinal(node);
-            int dotProduct = dotProductI8(query, getSegment(node), dimensions);
+            float dotProduct = dotProductI8(query, getSegment(node), dimensions);
             return VectorUtil.scaleMaxInnerProductScore(dotProduct);
         }
 

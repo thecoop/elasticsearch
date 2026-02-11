@@ -24,11 +24,14 @@ public interface ESVectorUtilSupport {
     /** Returns the sum of squared differences of the two vectors. */
     float squareDistance(float[] a, float[] b);
 
+    /** Calculates the cosine of the given byte arrays. */
+    float cosine(byte[] a, byte[] b);
+
     /** Calculates the dot product of the given byte arrays. */
-    int dotProduct(byte[] a, byte[] b);
+    float dotProduct(byte[] a, byte[] b);
 
     /** Returns the sum of squared differences of the two vectors. */
-    int squareDistance(byte[] a, byte[] b);
+    float squareDistance(byte[] a, byte[] b);
 
     /**
      * Compute dot product between {@code q} and {@code d}

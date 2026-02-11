@@ -35,7 +35,7 @@ public interface DenseVector {
 
     float getMagnitude();
 
-    int dotProduct(byte[] queryVector);
+    double dotProduct(byte[] queryVector);
 
     double dotProduct(float[] queryVector);
 
@@ -239,7 +239,7 @@ public interface DenseVector {
         }
 
         @Override
-        public int dotProduct(byte[] queryVector) {
+        public double dotProduct(byte[] queryVector) {
             throw new IllegalArgumentException(MISSING_VECTOR_FIELD_MESSAGE);
         }
 
