@@ -45,7 +45,7 @@ public abstract sealed class ByteVectorScorerSupplier implements RandomVectorSco
     }
 
     protected final void checkOrdinal(int ord) {
-        if (ord < 0 || ord > maxOrd) {
+        if (ord < 0 || ord >= maxOrd) {
             throw new IllegalArgumentException("illegal ordinal: " + ord);
         }
     }
