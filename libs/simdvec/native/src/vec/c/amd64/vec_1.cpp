@@ -868,16 +868,6 @@ EXPORT int64_t vec_dotd1q4(
     return dotd1q4_inner(a_ptr, query_ptr, length);
 }
 
-EXPORT int64_t vec_dotd2q4(
-    const int8_t* a_ptr,
-    const int8_t* query_ptr,
-    const int32_t length
-) {
-    int64_t lower = dotd1q4_inner(a_ptr, query_ptr, length/2);
-    int64_t upper = dotd1q4_inner(a_ptr + length/2, query_ptr, length/2);
-    return lower + (upper << 1);
-}
-
 template <int64_t(*mapper)(const int32_t, const int32_t*)>
 static inline void dotd1q4_inner_bulk(
     const int8_t* a,
@@ -947,6 +937,16 @@ EXPORT void vec_dotd1q4_bulk_offsets(
     const int32_t count,
     f32_t* results) {
     dotd1q4_inner_bulk<array_mapper>(a, query, length, pitch, offsets, count, results);
+}
+
+EXPORT int64_t vec_dotd2q4(
+    const int8_t* a_ptr,
+    const int8_t* query_ptr,
+    const int32_t length
+) {
+    int64_t lower = dotd1q4_inner(a_ptr, query_ptr, length/2);
+    int64_t upper = dotd1q4_inner(a_ptr + length/2, query_ptr, length/2);
+    return lower + (upper << 1);
 }
 
 template <int64_t(*mapper)(const int32_t, const int32_t*)>
