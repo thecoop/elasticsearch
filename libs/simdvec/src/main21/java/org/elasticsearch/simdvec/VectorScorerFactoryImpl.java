@@ -64,6 +64,7 @@ final class VectorScorerFactoryImpl implements VectorScorerFactory {
         ByteVectorValues values
     ) {
         input = FilterIndexInput.unwrapOnlyTest(input);
+        input = MemorySegmentAccessInputAccess.unwrap(input);
         if (input instanceof MemorySegmentAccessInput msInput) {
             checkInvariants(values.size(), values.dimension(), input);
             return switch (similarityType) {
