@@ -19,6 +19,6 @@ public interface MemorySegmentAccessInputAccess {
 
     static IndexInput unwrap(IndexInput input) {
         MemorySegmentAccessInput memorySeg = input instanceof MemorySegmentAccessInputAccess msaia ? msaia.get() : null;
-        return Objects.requireNonNullElse((IndexInput)memorySeg, input);
+        return Objects.requireNonNullElse((IndexInput) memorySeg, input);
     }
 }
