@@ -128,17 +128,19 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                 case INT7U -> "i7u";
                                 case INT8 -> "i8";
                                 case FLOAT32 -> "f32";
+                                case BFLOAT16 -> "bf16";
                             };
 
                             FunctionDescriptor descriptor = switch (op) {
                                 case SINGLE -> switch (type) {
                                     case INT7U -> intSingle;
-                                    case INT8, FLOAT32 -> floatSingle;
+                                    case INT8, FLOAT32, BFLOAT16 -> floatSingle;
                                 };
                                 case BULK -> bulk;
                                 case BULK_OFFSETS -> bulkOffsets;
                             };
 
+                            if (type == DataType.BFLOAT16) continue;    // not implemented yet
                             MethodHandle handle = bindFunction("vec_" + funcName + typeName + opName, caps, descriptor);
                             handles.put(new OperationSignature<>(f, type, op), handle);
                         }
@@ -395,6 +397,26 @@ public final class JdkVectorLibrary implements VectorLibrary {
             return callSingleDistanceFloat(squareF32Handle, a, b, elementCount);
         }
 
+        private static final MethodHandle dotBF16Handle = HANDLES.get(
+            new OperationSignature<>(Function.DOT_PRODUCT, DataType.BFLOAT16, Operation.SINGLE)
+        );
+
+        static float dotProductBF16(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a, b);
+            Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
+            return callSingleDistanceFloat(dotBF16Handle, a, b, elementCount);
+        }
+
+        private static final MethodHandle squareBF16Handle = HANDLES.get(
+            new OperationSignature<>(Function.SQUARE_DISTANCE, DataType.BFLOAT16, Operation.SINGLE)
+        );
+
+        static float squareDistanceBF16(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a, b);
+            Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
+            return callSingleDistanceFloat(squareBF16Handle, a, b, elementCount);
+        }
+
         private static final MethodHandle dotD1Q4Handle = HANDLES.get(
             new OperationSignature<>(Function.DOT_PRODUCT, BBQType.D1Q4, Operation.SINGLE)
         );
@@ -568,6 +590,10 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                         case FLOAT32:
                                             type = MethodType.methodType(float.class, MemorySegment.class, MemorySegment.class, int.class);
                                             checkMethod += "F32";
+                                            break;
+                                        case BFLOAT16:
+                                            type = MethodType.methodType(float.class, MemorySegment.class, MemorySegment.class, int.class);
+                                            checkMethod += "BF16";
                                             break;
                                     }
                                     yield lookup.findStatic(JdkVectorSimilarityFunctions.class, checkMethod, type);
