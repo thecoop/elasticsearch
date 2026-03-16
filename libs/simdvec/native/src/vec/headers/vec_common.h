@@ -18,9 +18,22 @@ static inline uintptr_t align_downwards(const void* ptr) {
     return addr;
 }
 
-template <typename T>
-static inline auto dot_scalar(const T a, const T b) {
+template <typename T, typename U>
+static inline auto dot_scalar(const T a, const U b) {
     return a * b;
+}
+
+template <>
+inline auto dot_scalar<uint16_t, uint16_t>(const uint16_t a, const uint16_t b) {
+    const float af = __builtin_bit_cast(float, a << 16);
+    const float bf = __builtin_bit_cast(float, b << 16);
+    return af * bf;
+}
+
+template <>
+inline auto dot_scalar<uint16_t, f32_t>(const uint16_t a, const f32_t b) {
+    const float af = __builtin_bit_cast(float, a << 16);
+    return af * b;
 }
 
 template <typename T>
