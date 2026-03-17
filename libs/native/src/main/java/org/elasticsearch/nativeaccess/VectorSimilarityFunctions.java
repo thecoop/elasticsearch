@@ -61,8 +61,18 @@ public interface VectorSimilarityFunctions {
     }
 
     enum BFloat16QueryType {
-        BFLOAT16,
-        FLOAT32
+        BFLOAT16(Short.BYTES),
+        FLOAT32(Float.BYTES);
+
+        private final int bytes;
+
+        BFloat16QueryType(int bytes) {
+            this.bytes = bytes;
+        }
+
+        public int bytes() {
+            return bytes;
+        }
     }
 
     /**

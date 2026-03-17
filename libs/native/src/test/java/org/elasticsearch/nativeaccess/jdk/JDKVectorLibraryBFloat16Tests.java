@@ -111,25 +111,48 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
             assertEquals(expected, similarity(nativeSeg1, nativeSeg2, dims), delta);
         }
     }
-    /*
+
     public void testBFloat16Bulk() {
         assumeTrue(notSupportedMsg(), supported());
         final int dims = size;
         final int numVecs = randomIntBetween(2, 101);
-        var values = new float[numVecs][];
-        var segment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
+        var f32Values = new float[numVecs][];
+        var bf16Values = new float[numVecs][dims];
+        var f32Segment = arena.allocate((long) dims * numVecs * Float.BYTES);
+        var bf16Segment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
         for (int i = 0; i < numVecs; i++) {
-            values[i] = randomBFloat16Array(dims);
-            long dstOffset = (long) i * dims * BFloat16.BYTES;
-            copyToBFloat16Segment(values[i], segment, dstOffset);
+            f32Values[i] = randomFloatArray(dims);
+            bf16Values[i] = truncateFloatArray(f32Values[i]);
+            MemorySegment.copy(
+                MemorySegment.ofArray(f32Values[i]),
+                JAVA_FLOAT_UNALIGNED,
+                0L,
+                f32Segment,
+                LAYOUT_LE_FLOAT,
+                (long) i * dims * Float.BYTES,
+                dims
+            );
+            copyToBFloat16Segment(bf16Values[i], bf16Segment, (long) i * dims * BFloat16.BYTES);
         }
-        int queryOrd = randomInt(numVecs - 1);
-        float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulk(values[queryOrd], values, expectedScores);
 
-        var nativeQuerySeg = segment.asSlice((long) queryOrd * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+        int queryOrd = randomInt(numVecs - 1);
+        float[] queryVector;
+        MemorySegment nativeQuerySeg = switch (queryType) {
+            case BFLOAT16 -> {
+                queryVector = bf16Values[queryOrd];
+                yield bf16Segment.asSlice((long) queryOrd * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+            }
+            case FLOAT32 -> {
+                queryVector = f32Values[queryOrd];
+                yield f32Segment.asSlice((long) queryOrd * dims * Float.BYTES, (long) dims * Float.BYTES);
+            }
+        };
+
+        float[] expectedScores = new float[numVecs];
+        scalarSimilarityBulk(queryVector, bf16Values, expectedScores);
+
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
-        similarityBulk(segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
+        similarityBulk(bf16Segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
         assertScoresEquals(expectedScores, bulkScoresSeg);
     }
 
@@ -138,24 +161,46 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         final int dims = size;
         final int numVecs = randomIntBetween(2, 101);
         var offsets = new int[numVecs];
-        var vectors = new float[numVecs][];
-        var vectorsSegment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
         var offsetsSegment = arena.allocate((long) numVecs * Integer.BYTES);
+        var f32Values = new float[numVecs][];
+        var bf16Values = new float[numVecs][dims];
+        var f32Segment = arena.allocate((long) dims * numVecs * Float.BYTES);
+        var bf16Segment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
         for (int i = 0; i < numVecs; i++) {
             offsets[i] = randomInt(numVecs - 1);
             offsetsSegment.setAtIndex(ValueLayout.JAVA_INT, i, offsets[i]);
-            vectors[i] = randomBFloat16Array(dims);
-            long dstOffset = (long) i * dims * BFloat16.BYTES;
-            copyToBFloat16Segment(vectors[i], vectorsSegment, dstOffset);
+            f32Values[i] = randomFloatArray(dims);
+            bf16Values[i] = truncateFloatArray(f32Values[i]);
+            MemorySegment.copy(
+                MemorySegment.ofArray(f32Values[i]),
+                JAVA_FLOAT_UNALIGNED,
+                0L,
+                f32Segment,
+                LAYOUT_LE_FLOAT,
+                (long) i * dims * Float.BYTES,
+                dims
+            );
+            copyToBFloat16Segment(bf16Values[i], bf16Segment, (long) i * dims * BFloat16.BYTES);
         }
+
         int queryOrd = randomInt(numVecs - 1);
+        float[] queryVector;
+        MemorySegment nativeQuerySeg = switch (queryType) {
+            case BFLOAT16 -> {
+                queryVector = bf16Values[queryOrd];
+                yield bf16Segment.asSlice((long) queryOrd * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+            }
+            case FLOAT32 -> {
+                queryVector = f32Values[queryOrd];
+                yield f32Segment.asSlice((long) queryOrd * dims * Float.BYTES, (long) dims * Float.BYTES);
+            }
+        };
+
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, offsets, expectedScores);
+        scalarSimilarityBulkWithOffsets(queryVector, bf16Values, offsets, expectedScores);
 
-        var nativeQuerySeg = vectorsSegment.asSlice((long) queryOrd * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
-
-        similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, dims * BFloat16.BYTES, offsetsSegment, numVecs, bulkScoresSeg);
+        similarityBulkWithOffsets(bf16Segment, nativeQuerySeg, dims, dims * BFloat16.BYTES, offsetsSegment, numVecs, bulkScoresSeg);
         assertScoresEquals(expectedScores, bulkScoresSeg);
     }
 
@@ -164,29 +209,52 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         final int dims = size;
         final int numVecs = randomIntBetween(2, 101);
         var offsets = new int[numVecs];
-        var vectors = new float[numVecs][];
+        var offsetsSegment = arena.allocate((long) numVecs * Integer.BYTES);
 
         // Mimics extra data at the end
-        var pitch = dims * BFloat16.BYTES + BFloat16.BYTES;
-        var vectorsSegment = arena.allocate((long) numVecs * pitch);
-        var offsetsSegment = arena.allocate((long) numVecs * Integer.BYTES);
+        // f32 doesn't need to be pitched like this, only used for individual queries
+        var bf16Pitch = dims * BFloat16.BYTES + BFloat16.BYTES;
+        var f32Values = new float[numVecs][];
+        var bf16Values = new float[numVecs][dims];
+        var f32Segment = arena.allocate((long) numVecs * dims * Float.BYTES);
+        var bf16Segment = arena.allocate((long) numVecs * bf16Pitch);
         for (int i = 0; i < numVecs; i++) {
             offsets[i] = randomInt(numVecs - 1);
             offsetsSegment.setAtIndex(ValueLayout.JAVA_INT, i, offsets[i]);
-            vectors[i] = randomBFloat16Array(dims);
-            long dstOffset = (long) i * pitch;
-            copyToBFloat16Segment(vectors[i], vectorsSegment, dstOffset);
+            f32Values[i] = randomFloatArray(dims);
+            bf16Values[i] = truncateFloatArray(f32Values[i]);
+            MemorySegment.copy(
+                MemorySegment.ofArray(f32Values[i]),
+                JAVA_FLOAT_UNALIGNED,
+                0L,
+                f32Segment,
+                LAYOUT_LE_FLOAT,
+                (long) i * dims * Float.BYTES,
+                dims
+            );
+            copyToBFloat16Segment(bf16Values[i], bf16Segment, (long) i * dims * BFloat16.BYTES);
         }
-        int queryOrd = randomInt(numVecs - 1);
-        float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, offsets, expectedScores);
 
-        var nativeQuerySeg = vectorsSegment.asSlice((long) queryOrd * pitch, pitch);
+        int queryOrd = randomInt(numVecs - 1);
+        float[] queryVector;
+        MemorySegment nativeQuerySeg = switch (queryType) {
+            case BFLOAT16 -> {
+                queryVector = bf16Values[queryOrd];
+                yield bf16Segment.asSlice((long) queryOrd * bf16Pitch, (long) dims * BFloat16.BYTES);
+            }
+            case FLOAT32 -> {
+                queryVector = f32Values[queryOrd];
+                yield f32Segment.asSlice((long) queryOrd * dims * Float.BYTES, (long) dims * Float.BYTES);
+            }
+        };
+        float[] expectedScores = new float[numVecs];
+        scalarSimilarityBulkWithOffsets(queryVector, bf16Values, offsets, expectedScores);
+
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
-        similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, pitch, offsetsSegment, numVecs, bulkScoresSeg);
+        similarityBulkWithOffsets(bf16Segment, nativeQuerySeg, dims, bf16Pitch, offsetsSegment, numVecs, bulkScoresSeg);
         assertScoresEquals(expectedScores, bulkScoresSeg);
-    }*/
+    }
 
     public void testIllegalDims() {
         assumeTrue(notSupportedMsg(), supported());
@@ -205,6 +273,22 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
         ex = expectThrows(IOOBE, () -> similarity(segment.asSlice(0L, aSize), segment.asSlice(bSize, bSize), -1));
         assertThat(ex.getMessage(), containsString("out of bounds for length"));
+    }
+
+    static float[] randomFloatArray(int length) {
+        float[] fa = new float[length];
+        for (int i = 0; i < length; i++) {
+            fa[i] = randomFloat();
+        }
+        return fa;
+    }
+
+    static float[] truncateFloatArray(float[] array) {
+        float[] bf = array.clone();
+        for (int i = 0; i < bf.length; i++) {
+            bf[i] = BFloat16.truncateToBFloat16(bf[i]);
+        }
+        return bf;
     }
 
     static float[] randomBFloat16Array(int length) {

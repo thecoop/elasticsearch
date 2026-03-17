@@ -15,7 +15,6 @@
 #define EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 
-#include <cstdint>
 
 #ifdef __cplusplus
     #if (__cplusplus >= 202302L) && (!__clang__)
@@ -25,6 +24,7 @@
             #error "32-bit float type required"
         #endif
         #define f32_t std::float32_t
+
         #if __STDCPP_BFLOAT16_T__ != 1
             #error "bfloat16 type required"
         #endif
@@ -34,6 +34,8 @@
         // Define our own 32-bit float type as float, but check the dimension is correct, or fail
         static_assert(sizeof(float) == 4, "Unsupported compiler. Please define f32_t to designate a 32-bit float.");
         #define f32_t float
+
+        #include <cstdint>
         // use uint16 as something that is guaranteed to be 16 bits wide
         // we'll need to cast to a float type to do scalar ops on it
         static_assert(sizeof(uint16_t) == 2, "Unsupported compiler. Please define bf16_t to designate a 16-bit bfloat.");

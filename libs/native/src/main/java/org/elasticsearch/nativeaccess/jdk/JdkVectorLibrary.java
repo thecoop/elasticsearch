@@ -147,7 +147,6 @@ public final class JdkVectorLibrary implements VectorLibrary {
                         for (BFloat16QueryType type : BFloat16QueryType.values()) {
                             // only byte vectors have cosine
                             if (f == Function.COSINE) continue;
-                            if (op != Operation.SINGLE) continue;   // not implemented yet
 
                             String typeName = switch (type) {
                                 case BFLOAT16 -> "Dbf16Qbf16";
@@ -290,6 +289,20 @@ public final class JdkVectorLibrary implements VectorLibrary {
             return true;
         }
 
+        static boolean checkBFloat16Bulk(
+            int queryElementSize,
+            MemorySegment a,
+            MemorySegment b,
+            int length,
+            int count,
+            MemorySegment result
+        ) {
+            Objects.checkFromIndexSize(0L, (long) length * count * Short.BYTES, a.byteSize());
+            Objects.checkFromIndexSize(0L, (long) length * queryElementSize, b.byteSize());
+            Objects.checkFromIndexSize(0L, (long) count * Float.BYTES, result.byteSize());
+            return true;
+        }
+
         static boolean checkBBQBulk(
             int dataBits,
             MemorySegment dataset,
@@ -302,6 +315,24 @@ public final class JdkVectorLibrary implements VectorLibrary {
             Objects.checkFromIndexSize(0L, (long) datasetVectorLengthInBytes * count, dataset.byteSize());
             // 1 bit data -> x4 bits query, 2 bit data -> x2 bits query
             Objects.checkFromIndexSize(0L, (long) datasetVectorLengthInBytes * (queryBits / dataBits), query.byteSize());
+            Objects.checkFromIndexSize(0L, (long) count * Float.BYTES, result.byteSize());
+            return true;
+        }
+
+        static boolean checkBFloat16BulkOffsets(
+            int queryElementSize,
+            MemorySegment a,
+            MemorySegment b,
+            int length,
+            int pitch,
+            MemorySegment offsets,
+            int count,
+            MemorySegment result
+        ) {
+            if (pitch < length * Short.BYTES) throw new IllegalArgumentException("Pitch needs to be at least " + length);
+            Objects.checkFromIndexSize(0L, (long) pitch * count, a.byteSize());
+            Objects.checkFromIndexSize(0L, (long) length * queryElementSize, b.byteSize());
+            Objects.checkFromIndexSize(0L, (long) count * Integer.BYTES, offsets.byteSize());
             Objects.checkFromIndexSize(0L, (long) count * Float.BYTES, result.byteSize());
             return true;
         }
@@ -691,6 +722,26 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                         MethodHandles.empty(op.getValue().type())
                                     );
                                 }
+                                case BFloat16QueryType bfq -> {
+                                    MethodHandle checkMethod = lookup.findStatic(
+                                        JdkVectorSimilarityFunctions.class,
+                                        "checkBFloat16Bulk",
+                                        MethodType.methodType(
+                                            boolean.class,
+                                            int.class,
+                                            MemorySegment.class,
+                                            MemorySegment.class,
+                                            int.class,
+                                            int.class,
+                                            MemorySegment.class
+                                        )
+                                    );
+                                    yield MethodHandles.guardWithTest(
+                                        MethodHandles.insertArguments(checkMethod, 0, bfq.bytes()),
+                                        op.getValue(),
+                                        MethodHandles.empty(op.getValue().type())
+                                    );
+                                }
                                 case DataType dt -> {
                                     MethodHandle checkMethod = lookup.findStatic(
                                         JdkVectorSimilarityFunctions.class,
@@ -736,6 +787,28 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                     );
                                     yield MethodHandles.guardWithTest(
                                         MethodHandles.insertArguments(checkMethod, 0, bbq.dataBits()),
+                                        op.getValue(),
+                                        MethodHandles.empty(op.getValue().type())
+                                    );
+                                }
+                                case BFloat16QueryType bfq -> {
+                                    MethodHandle checkMethod = lookup.findStatic(
+                                        JdkVectorSimilarityFunctions.class,
+                                        "checkBFloat16BulkOffsets",
+                                        MethodType.methodType(
+                                            boolean.class,
+                                            int.class,
+                                            MemorySegment.class,
+                                            MemorySegment.class,
+                                            int.class,
+                                            int.class,
+                                            MemorySegment.class,
+                                            int.class,
+                                            MemorySegment.class
+                                        )
+                                    );
+                                    yield MethodHandles.guardWithTest(
+                                        MethodHandles.insertArguments(checkMethod, 0, bfq.bytes()),
                                         op.getValue(),
                                         MethodHandles.empty(op.getValue().type())
                                     );
