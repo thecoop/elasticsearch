@@ -145,9 +145,9 @@ public final class JdkVectorLibrary implements VectorLibrary {
                         }
 
                         for (BFloat16QueryType type : BFloat16QueryType.values()) {
-                            // not implemented yet...
-                            if (f == Function.COSINE || f == Function.SQUARE_DISTANCE) continue;
-                            if (op != Operation.SINGLE) continue;
+                            // only byte vectors have cosine
+                            if (f == Function.COSINE) continue;
+                            if (op != Operation.SINGLE) continue;   // not implemented yet
 
                             String typeName = switch (type) {
                                 case BFLOAT16 -> "Dbf16Qbf16";
@@ -436,6 +436,28 @@ public final class JdkVectorLibrary implements VectorLibrary {
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
             Objects.checkFromIndexSize(0L, elementCount, b.byteSize() / Short.BYTES);
             return callSingleDistanceFloat(dotDBF16QBF16Handle, a, b, elementCount);
+        }
+
+        private static final MethodHandle squareDBF16QF32Handle = HANDLES.get(
+            new OperationSignature<>(Function.SQUARE_DISTANCE, BFloat16QueryType.FLOAT32, Operation.SINGLE)
+        );
+
+        static float squareDistanceDBF16QF32(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a.byteSize(), b.byteSize() / 2);
+            Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
+            Objects.checkFromIndexSize(0L, elementCount, b.byteSize() / Float.BYTES);
+            return callSingleDistanceFloat(squareDBF16QF32Handle, a, b, elementCount);
+        }
+
+        private static final MethodHandle squareDBF16QBF16Handle = HANDLES.get(
+            new OperationSignature<>(Function.SQUARE_DISTANCE, BFloat16QueryType.BFLOAT16, Operation.SINGLE)
+        );
+
+        static float squareDistanceDBF16QBF16(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a.byteSize(), b.byteSize());
+            Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
+            Objects.checkFromIndexSize(0L, elementCount, b.byteSize() / Short.BYTES);
+            return callSingleDistanceFloat(squareDBF16QBF16Handle, a, b, elementCount);
         }
 
         private static final MethodHandle dotD1Q4Handle = HANDLES.get(
