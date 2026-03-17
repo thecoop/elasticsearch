@@ -47,11 +47,7 @@ public interface VectorSimilarityFunctions {
         /**
          * 4-byte float. Single vector score returns results as a float.
          */
-        FLOAT32(Float.BYTES),
-        /**
-         * 2-byte bfloat16. Single vector score returns results as a float.
-         */
-        BFLOAT16(Short.BYTES);
+        FLOAT32(Float.BYTES);
 
         private final int bytes;
 
@@ -62,6 +58,11 @@ public interface VectorSimilarityFunctions {
         public int bytes() {
             return bytes;
         }
+    }
+
+    enum BFloat16QueryType {
+        BFLOAT16,
+        FLOAT32
     }
 
     /**
@@ -140,6 +141,8 @@ public interface VectorSimilarityFunctions {
     }
 
     MethodHandle getHandle(Function function, DataType dataType, Operation operation);
+
+    MethodHandle getBFloat16Handle(Function function, BFloat16QueryType queryType, Operation operation);
 
     MethodHandle getHandle(Function function, BBQType bbqType, Operation operation);
 

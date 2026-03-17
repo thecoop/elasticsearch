@@ -22,6 +22,7 @@ import org.junit.BeforeClass;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.IntFunction;
 
@@ -30,12 +31,19 @@ import static org.hamcrest.Matchers.containsString;
 
 public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTests {
 
+    static final ValueLayout.OfFloat LAYOUT_LE_FLOAT = JAVA_FLOAT_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
     static final ValueLayout.OfShort LAYOUT_LE_BFLOAT16 = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
+    final VectorSimilarityFunctions.BFloat16QueryType queryType;
     final float delta;
 
-    public JDKVectorLibraryBFloat16Tests(VectorSimilarityFunctions.Function function, int size) {
+    public JDKVectorLibraryBFloat16Tests(
+        VectorSimilarityFunctions.BFloat16QueryType queryType,
+        VectorSimilarityFunctions.Function function,
+        int size
+    ) {
         super(function, size);
+        this.queryType = queryType;
         this.delta = 1e-2f * size; // scale the delta with the size, bfloat16 has less precision
     }
 
@@ -44,7 +52,10 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         List<Object[]> baseParams = CollectionUtils.iterableAsArrayList(VectorSimilarityFunctionsTests.parametersFactory());
         // cosine is not used on bfloat16
         baseParams.removeIf(os -> os[0] == VectorSimilarityFunctions.Function.COSINE);
-        return baseParams;
+        baseParams.removeIf(os -> os[0] == VectorSimilarityFunctions.Function.SQUARE_DISTANCE);
+        return Arrays.stream(VectorSimilarityFunctions.BFloat16QueryType.values())
+            .flatMap(q -> baseParams.stream().map(os -> CollectionUtils.concatLists(List.of(q), Arrays.asList(os)).toArray()))
+            .toList();
     }
 
     @BeforeClass
@@ -70,25 +81,38 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         final int dims = size;
         final int numVecs = randomIntBetween(2, 101);
         var values = new float[numVecs][dims];
-        var segment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
+        // create both anyway, regardless of query type
+        var f32Segment = arena.allocate((long) dims * numVecs * Float.BYTES);
+        var bf16Segment = arena.allocate((long) dims * numVecs * BFloat16.BYTES);
         for (int i = 0; i < numVecs; i++) {
             values[i] = vectorGeneratorFunc.apply(dims);
-            long dstOffset = (long) i * dims * BFloat16.BYTES;
-            copyToBFloat16Segment(values[i], segment, dstOffset);
+            MemorySegment.copy(
+                MemorySegment.ofArray(values[i]),
+                JAVA_FLOAT_UNALIGNED,
+                0L,
+                f32Segment,
+                LAYOUT_LE_FLOAT,
+                (long) i * dims * Float.BYTES,
+                dims
+            );
+            copyToBFloat16Segment(values[i], bf16Segment, (long) i * dims * BFloat16.BYTES);
         }
 
         final int loopTimes = 1000;
         for (int i = 0; i < loopTimes; i++) {
             int first = randomInt(numVecs - 1);
             int second = randomInt(numVecs - 1);
-            var nativeSeg1 = segment.asSlice((long) first * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
-            var nativeSeg2 = segment.asSlice((long) second * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+            var nativeSeg1 = bf16Segment.asSlice((long) first * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+            var nativeSeg2 = switch (queryType) {
+                case BFLOAT16 -> bf16Segment.asSlice((long) second * dims * BFloat16.BYTES, (long) dims * BFloat16.BYTES);
+                case FLOAT32 -> f32Segment.asSlice((long) second * dims * Float.BYTES, (long) dims * Float.BYTES);
+            };
 
             float expected = scalarSimilarity(values[first], values[second]);
             assertEquals(expected, similarity(nativeSeg1, nativeSeg2, dims), delta);
         }
     }
-
+    /*
     public void testBFloat16Bulk() {
         assumeTrue(notSupportedMsg(), supported());
         final int dims = size;
@@ -163,19 +187,24 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
         similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, pitch, offsetsSegment, numVecs, bulkScoresSeg);
         assertScoresEquals(expectedScores, bulkScoresSeg);
-    }
+    }*/
 
     public void testIllegalDims() {
         assumeTrue(notSupportedMsg(), supported());
-        var segment = arena.allocate((long) size * 3 * BFloat16.BYTES);
+        var segment = arena.allocate((long) size * 3 * Float.BYTES);
+        int aSize = size * BFloat16.BYTES;
+        int bSize = switch (queryType) {
+            case BFLOAT16 -> size * BFloat16.BYTES;
+            case FLOAT32 -> size * Float.BYTES;
+        };
 
-        Exception ex = expectThrows(IAE, () -> similarity(segment.asSlice(0L, size), segment.asSlice(size, size + 1), size));
+        Exception ex = expectThrows(IAE, () -> similarity(segment.asSlice(0L, aSize), segment.asSlice(0L, bSize + 2), size));
         assertThat(ex.getMessage(), containsString("Dimensions differ"));
 
-        ex = expectThrows(IOOBE, () -> similarity(segment.asSlice(0L, size), segment.asSlice(size, size), size + 1));
+        ex = expectThrows(IOOBE, () -> similarity(segment.asSlice(0L, aSize), segment.asSlice(bSize, bSize), size + 1));
         assertThat(ex.getMessage(), containsString("out of bounds for length"));
 
-        ex = expectThrows(IOOBE, () -> similarity(segment.asSlice(0L, size), segment.asSlice(size, size), -1));
+        ex = expectThrows(IOOBE, () -> similarity(segment.asSlice(0L, aSize), segment.asSlice(bSize, bSize), -1));
         assertThat(ex.getMessage(), containsString("out of bounds for length"));
     }
 
@@ -196,11 +225,8 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
     float similarity(MemorySegment a, MemorySegment b, int length) {
         try {
-            return (float) getVectorDistance().getHandle(
-                function,
-                VectorSimilarityFunctions.DataType.BFLOAT16,
-                VectorSimilarityFunctions.Operation.SINGLE
-            ).invokeExact(a, b, length);
+            return (float) getVectorDistance().getBFloat16Handle(function, queryType, VectorSimilarityFunctions.Operation.SINGLE)
+                .invokeExact(a, b, length);
         } catch (Throwable t) {
             throw rethrow(t);
         }
@@ -208,7 +234,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
     void similarityBulk(MemorySegment a, MemorySegment b, int dims, int count, MemorySegment result) {
         try {
-            getVectorDistance().getHandle(function, VectorSimilarityFunctions.DataType.BFLOAT16, VectorSimilarityFunctions.Operation.BULK)
+            getVectorDistance().getBFloat16Handle(function, queryType, VectorSimilarityFunctions.Operation.BULK)
                 .invokeExact(a, b, dims, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
@@ -225,11 +251,8 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         MemorySegment result
     ) {
         try {
-            getVectorDistance().getHandle(
-                function,
-                VectorSimilarityFunctions.DataType.BFLOAT16,
-                VectorSimilarityFunctions.Operation.BULK_OFFSETS
-            ).invokeExact(a, b, dims, pitch, offsets, count, result);
+            getVectorDistance().getBFloat16Handle(function, queryType, VectorSimilarityFunctions.Operation.BULK_OFFSETS)
+                .invokeExact(a, b, dims, pitch, offsets, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
         }

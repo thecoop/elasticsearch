@@ -14,6 +14,7 @@ import org.elasticsearch.logging.LogManager;
 import org.elasticsearch.logging.Logger;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions.BBQType;
+import org.elasticsearch.nativeaccess.VectorSimilarityFunctions.BFloat16QueryType;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions.DataType;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions.Function;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions.Operation;
@@ -128,19 +129,37 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                 case INT7U -> "i7u";
                                 case INT8 -> "i8";
                                 case FLOAT32 -> "f32";
-                                case BFLOAT16 -> "bf16";
                             };
 
                             FunctionDescriptor descriptor = switch (op) {
                                 case SINGLE -> switch (type) {
                                     case INT7U -> intSingle;
-                                    case INT8, FLOAT32, BFLOAT16 -> floatSingle;
+                                    case INT8, FLOAT32 -> floatSingle;
                                 };
                                 case BULK -> bulk;
                                 case BULK_OFFSETS -> bulkOffsets;
                             };
 
-                            if (type == DataType.BFLOAT16) continue;    // not implemented yet
+                            MethodHandle handle = bindFunction("vec_" + funcName + typeName + opName, caps, descriptor);
+                            handles.put(new OperationSignature<>(f, type, op), handle);
+                        }
+
+                        for (BFloat16QueryType type : BFloat16QueryType.values()) {
+                            // not implemented yet...
+                            if (f == Function.COSINE || f == Function.SQUARE_DISTANCE) continue;
+                            if (op != Operation.SINGLE) continue;
+
+                            String typeName = switch (type) {
+                                case BFLOAT16 -> "Dbf16Qbf16";
+                                case FLOAT32 -> "Dbf16Qf32";
+                            };
+
+                            FunctionDescriptor descriptor = switch (op) {
+                                case SINGLE -> floatSingle;
+                                case BULK -> bulk;
+                                case BULK_OFFSETS -> bulkOffsets;
+                            };
+
                             MethodHandle handle = bindFunction("vec_" + funcName + typeName + opName, caps, descriptor);
                             handles.put(new OperationSignature<>(f, type, op), handle);
                         }
@@ -332,7 +351,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static int dotProductI7u(MemorySegment a, MemorySegment b, int length) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, length, a.byteSize());
             return callSingleDistanceInt(dotI7uHandle, a, b, length);
         }
@@ -342,7 +361,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static int squareDistanceI7u(MemorySegment a, MemorySegment b, int length) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, length, a.byteSize());
             return callSingleDistanceInt(squareI7uHandle, a, b, length);
         }
@@ -352,7 +371,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static float cosineI8(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize());
             return callSingleDistanceFloat(cosI8Handle, a, b, elementCount);
         }
@@ -362,7 +381,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static float dotProductI8(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize());
             return callSingleDistanceFloat(dotI8Handle, a, b, elementCount);
         }
@@ -372,7 +391,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static float squareDistanceI8(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize());
             return callSingleDistanceFloat(squareI8Handle, a, b, elementCount);
         }
@@ -382,7 +401,7 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static float dotProductF32(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Float.BYTES);
             return callSingleDistanceFloat(dotF32Handle, a, b, elementCount);
         }
@@ -392,29 +411,31 @@ public final class JdkVectorLibrary implements VectorLibrary {
         );
 
         static float squareDistanceF32(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Float.BYTES);
             return callSingleDistanceFloat(squareF32Handle, a, b, elementCount);
         }
 
-        private static final MethodHandle dotBF16Handle = HANDLES.get(
-            new OperationSignature<>(Function.DOT_PRODUCT, DataType.BFLOAT16, Operation.SINGLE)
+        private static final MethodHandle dotDBF16QF32Handle = HANDLES.get(
+            new OperationSignature<>(Function.DOT_PRODUCT, BFloat16QueryType.FLOAT32, Operation.SINGLE)
         );
 
-        static float dotProductBF16(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+        static float dotProductDBF16QF32(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a.byteSize(), b.byteSize() / 2);
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
-            return callSingleDistanceFloat(dotBF16Handle, a, b, elementCount);
+            Objects.checkFromIndexSize(0L, elementCount, b.byteSize() / Float.BYTES);
+            return callSingleDistanceFloat(dotDBF16QF32Handle, a, b, elementCount);
         }
 
-        private static final MethodHandle squareBF16Handle = HANDLES.get(
-            new OperationSignature<>(Function.SQUARE_DISTANCE, DataType.BFLOAT16, Operation.SINGLE)
+        private static final MethodHandle dotDBF16QBF16Handle = HANDLES.get(
+            new OperationSignature<>(Function.DOT_PRODUCT, BFloat16QueryType.BFLOAT16, Operation.SINGLE)
         );
 
-        static float squareDistanceBF16(MemorySegment a, MemorySegment b, int elementCount) {
-            checkByteSize(a, b);
+        static float dotProductDBF16QBF16(MemorySegment a, MemorySegment b, int elementCount) {
+            checkByteSize(a.byteSize(), b.byteSize());
             Objects.checkFromIndexSize(0L, elementCount, a.byteSize() / Short.BYTES);
-            return callSingleDistanceFloat(squareBF16Handle, a, b, elementCount);
+            Objects.checkFromIndexSize(0L, elementCount, b.byteSize() / Short.BYTES);
+            return callSingleDistanceFloat(dotDBF16QBF16Handle, a, b, elementCount);
         }
 
         private static final MethodHandle dotD1Q4Handle = HANDLES.get(
@@ -447,9 +468,9 @@ public final class JdkVectorLibrary implements VectorLibrary {
             return callSingleDistanceLong(dotD4Q4Handle, a, query, length);
         }
 
-        private static void checkByteSize(MemorySegment a, MemorySegment b) {
-            if (a.byteSize() != b.byteSize()) {
-                throw new IllegalArgumentException("Dimensions differ: " + a.byteSize() + "!=" + b.byteSize());
+        private static void checkByteSize(long aSize, long bSize) {
+            if (aSize != bSize) {
+                throw new IllegalArgumentException("Dimensions differ: " + aSize + "!=" + bSize);
             }
         }
 
@@ -591,9 +612,23 @@ public final class JdkVectorLibrary implements VectorLibrary {
                                             type = MethodType.methodType(float.class, MemorySegment.class, MemorySegment.class, int.class);
                                             checkMethod += "F32";
                                             break;
+                                    }
+                                    yield lookup.findStatic(JdkVectorSimilarityFunctions.class, checkMethod, type);
+                                }
+                                case BFloat16QueryType bfq -> {
+                                    MethodType type = MethodType.methodType(
+                                        float.class,
+                                        MemorySegment.class,
+                                        MemorySegment.class,
+                                        int.class
+                                    );
+
+                                    switch (bfq) {
                                         case BFLOAT16:
-                                            type = MethodType.methodType(float.class, MemorySegment.class, MemorySegment.class, int.class);
-                                            checkMethod += "BF16";
+                                            checkMethod += "DBF16QBF16";
+                                            break;
+                                        case FLOAT32:
+                                            checkMethod += "DBF16QF32";
                                             break;
                                     }
                                     yield lookup.findStatic(JdkVectorSimilarityFunctions.class, checkMethod, type);
@@ -753,6 +788,14 @@ public final class JdkVectorLibrary implements VectorLibrary {
         @Override
         public MethodHandle getHandle(Function function, DataType dataType, Operation operation) {
             OperationSignature<?> key = new OperationSignature<>(function, dataType, operation);
+            MethodHandle mh = HANDLES_WITH_CHECKS.get(key);
+            if (mh == null) throw new IllegalArgumentException("Signature not implemented: " + key);
+            return mh;
+        }
+
+        @Override
+        public MethodHandle getBFloat16Handle(Function function, BFloat16QueryType queryType, Operation operation) {
+            OperationSignature<?> key = new OperationSignature<>(function, queryType, operation);
             MethodHandle mh = HANDLES_WITH_CHECKS.get(key);
             if (mh == null) throw new IllegalArgumentException("Signature not implemented: " + key);
             return mh;
