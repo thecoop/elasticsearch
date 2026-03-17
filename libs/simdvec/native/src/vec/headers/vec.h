@@ -15,6 +15,8 @@
 #define EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 
+#include <cstdint>
+
 #ifdef __cplusplus
     #if (__cplusplus >= 202302L) && (!__clang__)
         // Compiler is C++ and supports the C++23 floating-point definitions
