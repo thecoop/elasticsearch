@@ -177,7 +177,8 @@ static inline void dotd1q4_inner_bulk(
 
                     apply_indexed<batches>([&](auto B) {
                         apply_indexed<query_bits>([&](auto Q) {
-                            bit_sum[B * Q] = vaddq_u8(bit_sum[B * Q], vcntq_u8(vandq_u8(qv[Q], yv[B])));
+                            constexpr int idx = B * query_bits + Q;
+                            bit_sum[idx] = vaddq_u8(bit_sum[idx], vcntq_u8(vandq_u8(qv[Q], yv[B])));
                         });
                     });
                 }
@@ -192,26 +193,26 @@ static inline void dotd1q4_inner_bulk(
         for (; r < length; r++) {
             int64_t vs[batches];
             apply_indexed<batches>([&](auto I) {
-                vs[I] = *(as[I] + r);
+                vs[I] = *((int64_t*)(as[I] + r));
             });
 
             int64_t qs[query_bits];
             apply_indexed<query_bits>([&](auto I) {
-                qs[I] = *(query[I] + r);
+                qs[I] = *((int64_t*)(query[I] + r));
             });
 
             apply_indexed<batches>([&](auto B) {
                 apply_indexed<query_bits>([&](auto Q) {
-                    bit_result[B * Q] = __builtin_popcount(qs[Q] & vs[B] & 0xFF);
+                    bit_result[B * query_bits + Q] += __builtin_popcount(qs[Q] & vs[B] & 0xFF);
                 });
             });
         }
-        apply_indexed<batches>([&](auto I) {
+        apply_indexed<batches>([&](auto B) {
             int32_t res = 0;
             apply_indexed<query_bits>([&](auto Q) {
-                res += (bit_result[I * Q] << Q);
+                res += (bit_result[B * query_bits + Q] << Q);
             });
-            results[c + I] = (f32_t)res;
+            results[c + B] = (f32_t)res;
         });
     }
 
