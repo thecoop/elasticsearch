@@ -63,11 +63,16 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
             * We must ensure that the temporary sums <= 255
             * and 31 * 8 bits = 248 which is OK.
             */
-            uint64_t limit = std::min(iters, j + 31);
+            uint64_t limit = std::min(j + 31, iters);
             for (; j < limit; j++, r += chunk_size)  {
-                const uint8x16_t yv = vld1q_u8((const uint8_t*)a + r);
+                uint8x16_t qv[query_bits];
                 apply_indexed<query_bits>([&](auto I) {
-                    bit_sum[I] = vaddq_u8(bit_sum[I], vcntq_u8(vandq_u8(vld1q_u8(query[I] + r), yv)));
+                    qv[I] = vld1q_u8(query[I] + r);
+                });
+                const uint8x16_t yv = vld1q_u8((const uint8_t*)a + r);
+
+                apply_indexed<query_bits>([&](auto I) {
+                    bit_sum[I] = vaddq_u8(bit_sum[I], vcntq_u8(vandq_u8(qv[I], yv)));
                 });
             }
 
@@ -82,7 +87,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
     for (; r < upperBound; r += sizeof(int64_t)) {
         int64_t value = *((int64_t*)(a + r));
         apply_indexed<query_bits>([&](auto I) {
-            int64_t bits = *((int64_t*)(query[I] + r));
+            int64_t bits = *((int64_t*)(q + r + I * length));
             bit_result[I] += __builtin_popcountll(bits & value);
         });
     }
@@ -92,7 +97,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
     for (; r < upperBound; r += sizeof(int32_t)) {
         int32_t value = *((int32_t*)(a + r));
         apply_indexed<query_bits>([&](auto I) {
-            int32_t bits = *((int32_t*)(query[I] + r));
+            int32_t bits = *((int32_t*)(q + r + I * length));
             bit_result[I] += __builtin_popcount(bits & value);
         });
     }
@@ -101,7 +106,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
     for (; r < length; r++) {
         int8_t value = *(a + r);
         apply_indexed<query_bits>([&](auto I) {
-            int32_t bits = *(query[I] + r);
+            int32_t bits = *(q + r + I * length);
             bit_result[I] += __builtin_popcount(bits & value & 0xFF);
         });
     }

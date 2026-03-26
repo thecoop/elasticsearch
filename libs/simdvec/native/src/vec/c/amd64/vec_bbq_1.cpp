@@ -57,17 +57,12 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
         acc[I] = _mm256_setzero_si256();
     });
 
-    const int8_t* query[query_bits];
-    apply_indexed<query_bits>([&](auto I) {
-        query[I] = q + I * length;
-    });
-
     int r = 0;
     int upperBound = length & ~(sizeof(__m256i) - 1);
     for (; r < upperBound; r += sizeof(__m256i)) {
         __m256i value = _mm256_loadu_si256((const __m256i_u*)(a + r));
         apply_indexed<query_bits>([&](auto I) {
-            __m256i res = dot_bit_256(value, query[I] + r);
+            __m256i res = dot_bit_256(value, q + r + I * length);
             acc[I] = _mm256_add_epi64(acc[I], _mm256_sad_epu8(res, _mm256_setzero_si256()));
         });
     }
@@ -82,7 +77,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
     for (; r < upperBound; r += sizeof(int32_t)) {
         int32_t value = *((int32_t*)(a + r));
         apply_indexed<query_bits>([&](auto I) {
-            int32_t bits = *((int32_t*)(query[I] + r));
+            int32_t bits = *((int32_t*)(q + r + I * length));
             bit_result[I] += __builtin_popcount(bits & value);
         });
     }
@@ -90,7 +85,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
     for (; r < length; r++) {
         int8_t value = *(a + r);
         apply_indexed<query_bits>([&](auto I) {
-            int32_t bits = *(query[I] + r);
+            int32_t bits = *(q + r + I * length);
             bit_result[I] += __builtin_popcount(bits & value & 0xFF);
         });
     }
