@@ -65,6 +65,7 @@ import org.elasticsearch.xpack.esql.expression.UnresolvedNamePattern;
 import org.elasticsearch.xpack.esql.expression.function.AggregateMetricDoubleNativeSupport;
 import org.elasticsearch.xpack.esql.expression.function.EsqlFunctionRegistry;
 import org.elasticsearch.xpack.esql.expression.function.FunctionDefinition;
+import org.elasticsearch.xpack.esql.expression.function.TimestampBoundsAware;
 import org.elasticsearch.xpack.esql.expression.function.UnresolvedFunction;
 import org.elasticsearch.xpack.esql.expression.function.UnsupportedAttribute;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Absent;
@@ -153,6 +154,7 @@ import org.elasticsearch.xpack.esql.plan.logical.join.JoinConfig;
 import org.elasticsearch.xpack.esql.plan.logical.join.JoinType;
 import org.elasticsearch.xpack.esql.plan.logical.join.JoinTypes;
 import org.elasticsearch.xpack.esql.plan.logical.join.LookupJoin;
+import org.elasticsearch.xpack.esql.plan.logical.local.EmptyLocalSupplier;
 import org.elasticsearch.xpack.esql.plan.logical.local.LocalRelation;
 import org.elasticsearch.xpack.esql.plan.logical.local.LocalSupplier;
 import org.elasticsearch.xpack.esql.plan.logical.local.ResolvingProject;
@@ -187,7 +189,7 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.elasticsearch.xpack.core.enrich.EnrichPolicy.GEO_MATCH_TYPE;
 import static org.elasticsearch.xpack.esql.capabilities.TranslationAware.translatable;
-import static org.elasticsearch.xpack.esql.core.expression.Expressions.toReferenceAttributes;
+import static org.elasticsearch.xpack.esql.core.expression.Expressions.toReferenceAttributesPreservingIds;
 import static org.elasticsearch.xpack.esql.core.type.DataType.AGGREGATE_METRIC_DOUBLE;
 import static org.elasticsearch.xpack.esql.core.type.DataType.BOOLEAN;
 import static org.elasticsearch.xpack.esql.core.type.DataType.DATETIME;
@@ -234,6 +236,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
             new ResolveEnrich(),
             new ResolveLookupTables(),
             new ResolveFunctions(),
+            new ResolveTimestampBoundsAware(),
             new ResolveInference(),
             new DateMillisToNanosInEsRelation()
         ),
@@ -272,11 +275,12 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
 
     public LogicalPlan analyze(LogicalPlan plan) {
         BitSet partialMetrics = new BitSet(FeatureMetric.values().length);
-        return verify(execute(plan), gatherPreAnalysisMetrics(plan, partialMetrics));
+        LogicalPlan analyzed = execute(plan);
+        return verify(analyzed, gatherPreAnalysisMetrics(plan, partialMetrics));
     }
 
     public LogicalPlan verify(LogicalPlan plan, BitSet partialMetrics) {
-        Collection<Failure> failures = verifier.verify(plan, partialMetrics);
+        Collection<Failure> failures = verifier.verify(plan, partialMetrics, context().unmappedResolution());
         if (failures.isEmpty() == false) {
             throw new VerificationException(failures);
         }
@@ -1084,7 +1088,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                             }
                         }
                     }
-                    logicalPlan = resolveKeep(new Keep(logicalPlan.source(), logicalPlan, newOutput), UnmappedResolution.FAIL);
+                    logicalPlan = resolveKeep(new Keep(logicalPlan.source(), logicalPlan, newOutput), UnmappedResolution.DEFAULT);
                 }
 
                 newSubPlans.add(logicalPlan);
@@ -1094,7 +1098,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                 return fork;
             }
 
-            return fork.replaceSubPlansAndOutput(newSubPlans, toReferenceAttributes(outputUnion));
+            return fork.replaceSubPlansAndOutput(newSubPlans, toReferenceAttributesPreservingIds(outputUnion, fork.output()));
         }
 
         /*
@@ -1365,6 +1369,24 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
         }
 
         private LogicalPlan resolvePromql(PromqlCommand promql, List<Attribute> childrenOutput) {
+            // When the index pattern resolves to no concrete indices (e.g. the data stream hasn't been created yet),
+            // the EsRelation has an empty mapping. Trying to resolve the metric field name would leave it as an
+            // UnresolvedAttribute, causing a VerificationException.
+            // Prometheus expects empty results (not errors) so we short-circuit to an empty local relation.
+            if ((promql.child() instanceof EsRelation esRelation) && esRelation.concreteQualifiedIndices().isEmpty()) {
+                var source = promql.source();
+                var localRelation = new LocalRelation(
+                    source,
+                    List.of(
+                        new ReferenceAttribute(source, null, promql.valueColumnName(), DOUBLE, Nullability.FALSE, promql.valueId(), false),
+                        new ReferenceAttribute(source, null, promql.stepColumnName(), DATETIME, Nullability.FALSE, promql.stepId(), false)
+                    ),
+                    EmptyLocalSupplier.EMPTY
+                );
+                // Wrap in an explicit LIMIT 0 so that AddImplicitLimit skips the "No limit defined" warning,
+                // which would otherwise fire because the LocalRelation contains no PromqlCommand marker.
+                return new Limit(source, new Literal(source, 0, DataType.INTEGER), localRelation);
+            }
             LogicalPlan promqlPlan = promql.promqlPlan();
             Function<UnresolvedAttribute, Expression> lambda = ua -> maybeResolveAttribute(ua, childrenOutput);
             // resolve the nested plan
@@ -1475,7 +1497,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
          * row foo = 1, bar = 2 | keep bar*, foo, *   ->  bar, foo
          */
         private static LogicalPlan resolveKeep(Keep keep, UnmappedResolution unmappedResolution) {
-            return unmappedResolution == UnmappedResolution.FAIL
+            return unmappedResolution == UnmappedResolution.DEFAULT
                 ? new Project(keep.source(), keep.child(), keepResolver(keep.projections(), keep.child().output()))
                 : new ResolvingProject(keep.source(), keep.child(), inputAttributes -> keepResolver(keep.projections(), inputAttributes));
         }
@@ -1527,7 +1549,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
         }
 
         private static LogicalPlan resolveDrop(Drop drop, UnmappedResolution unmappedResolution) {
-            return unmappedResolution == UnmappedResolution.FAIL
+            return unmappedResolution == UnmappedResolution.DEFAULT
                 ? new Project(drop.source(), drop.child(), dropResolver(drop.removals(), drop.output()))
                 : new ResolvingProject(drop.source(), drop.child(), inputAttributes -> dropResolver(drop.removals(), inputAttributes));
         }
@@ -1563,7 +1585,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
         }
 
         private LogicalPlan resolveRename(Rename rename, UnmappedResolution unmappedResolution) {
-            return unmappedResolution == UnmappedResolution.FAIL
+            return unmappedResolution == UnmappedResolution.DEFAULT
                 ? new Project(rename.source(), rename.child(), projectionsForRename(rename, rename.child().output(), log))
                 : new ResolvingProject(
                     rename.source(),
@@ -1746,6 +1768,37 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                 return ca.withConfiguration(configuration);
             }
             return expression;
+        }
+    }
+
+    private static class ResolveTimestampBoundsAware extends ParameterizedAnalyzerRule<LogicalPlan, AnalyzerContext> {
+
+        @Override
+        protected boolean skipResolved() {
+            return false;
+        }
+
+        @Override
+        protected LogicalPlan rule(LogicalPlan plan, AnalyzerContext context) {
+            var bounds = context.timestampBounds();
+            if (bounds == null) {
+                return plan;
+            }
+            if (plan instanceof TimestampBoundsAware.OfLogicalPlan tba && tba.needsTimestampBounds()) {
+                plan = tba.withTimestampBounds(
+                    Literal.dateTime(plan.source(), bounds.start()),
+                    Literal.dateTime(plan.source(), bounds.end())
+                );
+            }
+            return plan.transformExpressionsUp(Expression.class, expression -> {
+                if (expression instanceof TimestampBoundsAware.OfExpression tba && tba.needsTimestampBounds()) {
+                    return tba.withTimestampBounds(
+                        Literal.dateTime(expression.source(), bounds.start()),
+                        Literal.dateTime(expression.source(), bounds.end())
+                    );
+                }
+                return expression;
+            });
         }
     }
 
@@ -3030,7 +3083,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                     }
                 }
             }
-            return new UnionAll(unionAll.source(), newChildren, newOutput);
+            return unionAll.replaceSubPlansAndOutput(newChildren, newOutput);
         }
 
         /**
@@ -3276,7 +3329,7 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                     newOutput.add(oldAttr);
                 }
             }
-            return new UnionAll(unionAll.source(), newChildren, newOutput);
+            return unionAll.replaceSubPlansAndOutput(newChildren, newOutput);
         }
 
         /**

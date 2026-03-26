@@ -63,7 +63,6 @@ import org.elasticsearch.xpack.esql.expression.function.aggregate.WeightedAvg;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.Kql;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.Match;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.MatchPhrase;
-import org.elasticsearch.xpack.esql.expression.function.fulltext.MultiMatch;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.QueryString;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.Score;
 import org.elasticsearch.xpack.esql.expression.function.grouping.Bucket;
@@ -184,11 +183,14 @@ import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.SpatialCo
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.SpatialDisjoint;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.SpatialIntersects;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.SpatialWithin;
+import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StDimension;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StDistance;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StEnvelope;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StGeohash;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StGeohex;
+import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StGeometryType;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StGeotile;
+import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StIsEmpty;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StNPoints;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StSimplify;
 import org.elasticsearch.xpack.esql.expression.function.scalar.spatial.StX;
@@ -321,7 +323,6 @@ public class EsqlFunctionRegistry {
 
     @SuppressWarnings("this-escape")
     public EsqlFunctionRegistry() {
-        // TODO build this one time in plugin construction and pass it in
         register(functions());
         buildDataTypesForStringLiteralConversion(functions());
         nameSurrogates();
@@ -350,6 +351,10 @@ public class EsqlFunctionRegistry {
 
     public boolean functionExists(String functionName) {
         return defs.containsKey(functionName);
+    }
+
+    public boolean functionExists(Class<? extends Function> clazz) {
+        return names.containsKey(clazz);
     }
 
     public String functionName(Class<? extends Function> clazz) {
@@ -489,6 +494,9 @@ public class EsqlFunctionRegistry {
                 def(StGeotile.class, StGeotile::new, "st_geotile"),
                 def(StGeohex.class, StGeohex::new, "st_geohex"),
                 def(StNPoints.class, StNPoints::new, "st_npoints"),
+                def(StGeometryType.class, StGeometryType::new, "st_geometrytype"),
+                def(StDimension.class, StDimension::new, "st_dimension"),
+                def(StIsEmpty.class, StIsEmpty::new, "st_isempty"),
                 def(StXMax.class, StXMax::new, "st_xmax"),
                 def(StXMin.class, StXMin::new, "st_xmin"),
                 def(StYMax.class, StYMax::new, "st_ymax"),
@@ -563,7 +571,6 @@ public class EsqlFunctionRegistry {
                 def(Kql.class, bic(Kql::new), "kql"),
                 def(Knn.class, tri(Knn::new), "knn"),
                 def(Match.class, tri(Match::new), "match"),
-                def(MultiMatch.class, MultiMatch::new, "multi_match"),
                 def(QueryString.class, bic(QueryString::new), "qstr"),
                 def(MatchPhrase.class, tri(MatchPhrase::new), "match_phrase"),
                 def(Score.class, uni(Score::new), "score"),
