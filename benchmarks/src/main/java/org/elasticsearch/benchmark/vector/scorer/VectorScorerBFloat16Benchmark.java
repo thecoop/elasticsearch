@@ -41,10 +41,10 @@ import java.nio.file.Path;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.bfloat16VectorValues;
-import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.getScorerFactoryOrDie;
 import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.arrayScoreSupplier;
 import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.arrayScorer;
+import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.bfloat16VectorValues;
+import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.getScorerFactoryOrDie;
 import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.supportsHeapSegments;
 import static org.elasticsearch.benchmark.vector.scorer.BenchmarkUtils.writeBFloat16VectorData;
 import static org.elasticsearch.benchmark.vector.scorer.ScalarOperations.dotProduct;
