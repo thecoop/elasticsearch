@@ -268,14 +268,6 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         assertThat(ex.getMessage(), containsString("out of bounds for length"));
     }
 
-    static float[] randomFloatArray(int length) {
-        float[] fa = new float[length];
-        for (int i = 0; i < length; i++) {
-            fa[i] = randomFloat();
-        }
-        return fa;
-    }
-
     float similarity(MemorySegment a, MemorySegment b, int length) {
         try {
             return (float) getVectorDistance().getHandle(
@@ -314,18 +306,6 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
             ).invokeExact(a, b, dims, pitch, offsets, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    void assertScoresEquals(float[] expectedScores, MemorySegment expectedScoresSeg) {
-        assert expectedScores.length == (expectedScoresSeg.byteSize() / Float.BYTES);
-        for (int i = 0; i < expectedScores.length; i++) {
-            assertEquals(
-                "Difference at offset " + i,
-                expectedScores[i],
-                expectedScoresSeg.get(JAVA_FLOAT_UNALIGNED, (long) i * Float.BYTES),
-                delta
-            );
         }
     }
 }

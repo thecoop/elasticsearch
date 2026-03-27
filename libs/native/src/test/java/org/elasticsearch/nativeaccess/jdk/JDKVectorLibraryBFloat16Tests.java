@@ -136,7 +136,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulk(bf16Segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testBFloat16BulkWithOffsets() {
@@ -176,7 +176,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulkWithOffsets(bf16Segment, nativeQuerySeg, dims, dims * BFloat16.BYTES, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testBFloat16BulkWithOffsetsAndPitch() {
@@ -220,7 +220,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkWithOffsets(bf16Segment, nativeQuerySeg, dims, bf16Pitch, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     // Verifies that individual offset values are bounds-checked against the data segment.
@@ -291,14 +291,6 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         assertThat(ex.getMessage(), containsString("out of bounds for length"));
     }
 
-    static float[] randomFloatArray(int length) {
-        float[] fa = new float[length];
-        for (int i = 0; i < length; i++) {
-            fa[i] = randomFloat();
-        }
-        return fa;
-    }
-
     static float[] truncateFloatArray(float[] array) {
         float[] bf = array.clone();
         for (int i = 0; i < bf.length; i++) {
@@ -354,18 +346,6 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
                 .invokeExact(a, b, dims, pitch, offsets, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    void assertScoresEquals(float[] expectedScores, MemorySegment expectedScoresSeg) {
-        assert expectedScores.length == (expectedScoresSeg.byteSize() / Float.BYTES);
-        for (int i = 0; i < expectedScores.length; i++) {
-            assertEquals(
-                "Difference at offset " + i,
-                expectedScores[i],
-                expectedScoresSeg.get(JAVA_FLOAT_UNALIGNED, (long) i * Float.BYTES),
-                delta
-            );
         }
     }
 }

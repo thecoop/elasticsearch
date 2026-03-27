@@ -20,7 +20,6 @@ import java.lang.foreign.ValueLayout;
 import java.util.function.IntFunction;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static org.hamcrest.Matchers.containsString;
 
 public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
@@ -100,7 +99,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         var nativeQuerySeg = segment.asSlice((long) queryOrd * dims, dims);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulk(segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
 
         if (supportsHeapSegments()) {
             float[] bulkScores = new float[numVecs];
@@ -132,7 +131,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, dims, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     // Tests bulk sparse similarity where vector addresses are slices of a single contiguous segment,
@@ -162,7 +161,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkSparse(addressesSeg, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     // Tests bulk sparse similarity where each vector lives in its own independently allocated segment,
@@ -194,7 +193,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkSparse(addressesSeg, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testByteBulkWithOffsetsAndPitch() {
@@ -223,7 +222,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, pitch, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testByteBulkWithOffsetsHeapSegments() {
@@ -404,18 +403,6 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
             ).invokeExact(addresses, b, dims, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    void assertScoresEquals(float[] expectedScores, MemorySegment expectedScoresSeg) {
-        assert expectedScores.length == (expectedScoresSeg.byteSize() / Float.BYTES);
-        for (int i = 0; i < expectedScores.length; i++) {
-            assertEquals(
-                "Difference at offset " + i,
-                expectedScores[i],
-                expectedScoresSeg.get(JAVA_FLOAT_UNALIGNED, (long) i * Float.BYTES),
-                delta
-            );
         }
     }
 }
