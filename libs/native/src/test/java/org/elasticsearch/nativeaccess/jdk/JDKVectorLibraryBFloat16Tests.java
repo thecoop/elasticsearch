@@ -16,7 +16,6 @@ import org.elasticsearch.index.codec.vectors.BFloat16;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctionsTests;
 import org.junit.AfterClass;
-import org.junit.AssumptionViolatedException;
 import org.junit.BeforeClass;
 
 import java.lang.foreign.MemorySegment;
@@ -99,7 +98,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
                 case FLOAT32 -> f32Segment.asSlice((long) second * dims * Float.BYTES, (long) dims * Float.BYTES);
             };
 
-            float expected = scalarSimilarity(values[first], values[second]);
+            float expected = ScalarOperations.similarity(function, values[first], values[second]);
             assertEquals(expected, similarity(nativeSeg1, nativeSeg2, dims), delta);
         }
     }
@@ -133,7 +132,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         };
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulk(queryVector, bf16Values, expectedScores);
+        ScalarOperations.bulk(function, queryVector, bf16Values, expectedScores);
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulk(bf16Segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
@@ -173,7 +172,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
         };
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(queryVector, bf16Values, offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, queryVector, bf16Values, offsets, expectedScores);
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulkWithOffsets(bf16Segment, nativeQuerySeg, dims, dims * BFloat16.BYTES, offsetsSegment, numVecs, bulkScoresSeg);
@@ -216,7 +215,7 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
             }
         };
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(queryVector, bf16Values, offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, queryVector, bf16Values, offsets, expectedScores);
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
@@ -355,45 +354,6 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
                 .invokeExact(a, b, dims, pitch, offsets, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    float scalarSimilarity(float[] a, float[] b) {
-        return switch (function) {
-            case DOT_PRODUCT -> ScalarOperations.dotProduct(a, b);
-            case SQUARE_DISTANCE -> ScalarOperations.squareDistance(a, b);
-            case COSINE -> throw new AssumptionViolatedException("cosine not supported");
-        };
-    }
-
-    void scalarSimilarityBulk(float[] query, float[][] data, float[] scores) {
-        switch (function) {
-            case DOT_PRODUCT -> bulkScalar(ScalarOperations::dotProduct, query, data, scores);
-            case SQUARE_DISTANCE -> bulkScalar(ScalarOperations::squareDistance, query, data, scores);
-        }
-    }
-
-    void scalarSimilarityBulkWithOffsets(float[] query, float[][] data, int[] offsets, float[] scores) {
-        switch (function) {
-            case DOT_PRODUCT -> bulkWithOffsetsScalar(ScalarOperations::dotProduct, query, data, offsets, scores);
-            case SQUARE_DISTANCE -> bulkWithOffsetsScalar(ScalarOperations::squareDistance, query, data, offsets, scores);
-        }
-    }
-
-    @FunctionalInterface
-    private interface Similarity {
-        float function(float[] a, float[] b);
-    }
-
-    static void bulkScalar(Similarity function, float[] query, float[][] data, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.function(query, data[i]);
-        }
-    }
-
-    static void bulkWithOffsetsScalar(Similarity function, float[] query, float[][] data, int[] offsets, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.function(query, data[offsets[i]]);
         }
     }
 

@@ -15,7 +15,6 @@ import org.elasticsearch.common.util.CollectionUtils;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctions;
 import org.elasticsearch.nativeaccess.VectorSimilarityFunctionsTests;
 import org.junit.AfterClass;
-import org.junit.AssumptionViolatedException;
 import org.junit.BeforeClass;
 
 import java.lang.foreign.MemorySegment;
@@ -103,7 +102,7 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
             var querySlice = querySegment.asSlice((long) queryIndex * queryVectorBytes, queryVectorBytes);
             var indexSlice = indexSegment.asSlice((long) indexIndex * indexVectorBytes, indexVectorBytes);
 
-            float expected = scalarSimilarity(unpackedQueryVectors[queryIndex], unpackedIndexVectors[indexIndex]);
+            float expected = ScalarOperations.similarity(function, unpackedQueryVectors[queryIndex], unpackedIndexVectors[indexIndex]);
             assertEquals(expected, nativeSimilarity(indexSlice, querySlice, indexVectorBytes), 0f);
 
             if (supportsHeapSegments()) {
@@ -195,7 +194,7 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
         final TestData testData = createTestData(numVecs, size, type);
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulk(testData.unpackedQueryVector, testData.unpackedIndexVectors, expectedScores);
+        ScalarOperations.bulk(function, testData.unpackedQueryVector, testData.unpackedIndexVectors, expectedScores);
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         nativeSimilarityBulk(testData.indexSegment, testData.querySegment, testData.indexVectorBytes, numVecs, bulkScoresSeg);
@@ -222,7 +221,13 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
         final TestOffsets testOffsets = createTestOffsets(numVecs);
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(testData.unpackedQueryVector, testData.unpackedIndexVectors, testOffsets.offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(
+            function,
+            testData.unpackedQueryVector,
+            testData.unpackedIndexVectors,
+            testOffsets.offsets,
+            expectedScores
+        );
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
@@ -247,7 +252,13 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
         final TestOffsets testOffsets = createTestOffsets(numVecs);
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(testData.unpackedQueryVector, testData.unpackedIndexVectors, testOffsets.offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(
+            function,
+            testData.unpackedQueryVector,
+            testData.unpackedIndexVectors,
+            testOffsets.offsets,
+            expectedScores
+        );
 
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
@@ -274,7 +285,13 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
         final TestOffsets testOffsets = createTestOffsets(numVecs);
 
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(testData.unpackedQueryVector, testData.unpackedIndexVectors, testOffsets.offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(
+            function,
+            testData.unpackedQueryVector,
+            testData.unpackedIndexVectors,
+            testOffsets.offsets,
+            expectedScores
+        );
 
         float[] bulkScores = new float[numVecs];
         nativeSimilarityBulkWithOffsets(
@@ -400,44 +417,6 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
                 .invokeExact(a, b, dims, pitch, offsets, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    float scalarSimilarity(byte[] a, byte[] b) {
-        return switch (function) {
-            case DOT_PRODUCT -> ScalarOperations.dotProduct(a, b);
-            case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
-            case COSINE -> throw new AssumptionViolatedException("cosine not supported");
-        };
-    }
-
-    void scalarSimilarityBulk(byte[] query, byte[][] data, float[] scores) {
-        switch (function) {
-            case DOT_PRODUCT -> bulkScalar(ScalarOperations::dotProduct, query, data, scores);
-            case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
-        }
-    }
-
-    void scalarSimilarityBulkWithOffsets(byte[] query, byte[][] data, int[] offsets, float[] scores) {
-        switch (function) {
-            case DOT_PRODUCT -> bulkWithOffsetsScalar(ScalarOperations::dotProduct, query, data, offsets, scores);
-            case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
-        }
-    }
-
-    private interface Operation {
-        float apply(byte[] a, byte[] b);
-    }
-
-    static void bulkScalar(Operation function, byte[] query, byte[][] data, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.apply(query, data[i]);
-        }
-    }
-
-    static void bulkWithOffsetsScalar(Operation function, byte[] query, byte[][] data, int[] offsets, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.apply(query, data[offsets[i]]);
         }
     }
 

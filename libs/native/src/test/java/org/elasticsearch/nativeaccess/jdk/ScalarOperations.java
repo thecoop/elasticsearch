@@ -9,6 +9,8 @@
 
 package org.elasticsearch.nativeaccess.jdk;
 
+import org.elasticsearch.nativeaccess.VectorSimilarityFunctions;
+
 class ScalarOperations {
 
     static float cosine(byte[] a, byte[] b) {
@@ -58,5 +60,70 @@ class ScalarOperations {
             res += diff * diff;
         }
         return res;
+    }
+
+    static float similarity(VectorSimilarityFunctions.Function function, byte[] a, byte[] b) {
+        return switch (function) {
+            case COSINE -> cosine(a, b);
+            case DOT_PRODUCT -> dotProduct(a, b);
+            case SQUARE_DISTANCE -> squareDistance(a, b);
+        };
+    }
+
+    static float similarity(VectorSimilarityFunctions.Function function, float[] a, float[] b) {
+        return switch (function) {
+            case DOT_PRODUCT -> dotProduct(a, b);
+            case SQUARE_DISTANCE -> squareDistance(a, b);
+            case COSINE -> throw new UnsupportedOperationException("cosine not supported for float");
+        };
+    }
+
+    @FunctionalInterface
+    private interface Similarity<T> {
+        float apply(T a, T b);
+    }
+
+    static void bulk(VectorSimilarityFunctions.Function function, byte[] query, byte[][] data, float[] scores) {
+        Similarity<byte[]> sim = switch (function) {
+            case COSINE -> ScalarOperations::cosine;
+            case DOT_PRODUCT -> ScalarOperations::dotProduct;
+            case SQUARE_DISTANCE -> ScalarOperations::squareDistance;
+        };
+        for (int i = 0; i < data.length; i++) {
+            scores[i] = sim.apply(query, data[i]);
+        }
+    }
+
+    static void bulk(VectorSimilarityFunctions.Function function, float[] query, float[][] data, float[] scores) {
+        Similarity<float[]> sim = switch (function) {
+            case DOT_PRODUCT -> ScalarOperations::dotProduct;
+            case SQUARE_DISTANCE -> ScalarOperations::squareDistance;
+            case COSINE -> throw new UnsupportedOperationException("cosine not supported for float");
+        };
+        for (int i = 0; i < data.length; i++) {
+            scores[i] = sim.apply(query, data[i]);
+        }
+    }
+
+    static void bulkWithOffsets(VectorSimilarityFunctions.Function function, byte[] query, byte[][] data, int[] offsets, float[] scores) {
+        Similarity<byte[]> sim = switch (function) {
+            case COSINE -> ScalarOperations::cosine;
+            case DOT_PRODUCT -> ScalarOperations::dotProduct;
+            case SQUARE_DISTANCE -> ScalarOperations::squareDistance;
+        };
+        for (int i = 0; i < data.length; i++) {
+            scores[i] = sim.apply(query, data[offsets[i]]);
+        }
+    }
+
+    static void bulkWithOffsets(VectorSimilarityFunctions.Function function, float[] query, float[][] data, int[] offsets, float[] scores) {
+        Similarity<float[]> sim = switch (function) {
+            case DOT_PRODUCT -> ScalarOperations::dotProduct;
+            case SQUARE_DISTANCE -> ScalarOperations::squareDistance;
+            case COSINE -> throw new UnsupportedOperationException("cosine not supported for float");
+        };
+        for (int i = 0; i < data.length; i++) {
+            scores[i] = sim.apply(query, data[offsets[i]]);
+        }
     }
 }

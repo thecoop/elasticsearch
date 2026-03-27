@@ -70,7 +70,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
             var nativeSeg1 = segment.asSlice((long) first * dims, dims);
             var nativeSeg2 = segment.asSlice((long) second * dims, dims);
 
-            float expected = scalarSimilarity(values[first], values[second]);
+            float expected = ScalarOperations.similarity(function, values[first], values[second]);
             assertEquals(expected, similarity(nativeSeg1, nativeSeg2, dims), delta);
             if (supportsHeapSegments()) {
                 var heapSeg1 = MemorySegment.ofArray(values[first]);
@@ -95,7 +95,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulk(values[queryOrd], values, expectedScores);
+        ScalarOperations.bulk(function, values[queryOrd], values, expectedScores);
 
         var nativeQuerySeg = segment.asSlice((long) queryOrd * dims, dims);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
@@ -126,7 +126,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, vectors[queryOrd], vectors, offsets, expectedScores);
 
         var nativeQuerySeg = vectorsSegment.asSlice((long) queryOrd * dims, dims);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
@@ -156,7 +156,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, ordinals, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, vectors[queryOrd], vectors, ordinals, expectedScores);
 
         var nativeQuerySeg = vectorsSegment.asSlice((long) queryOrd * dims, dims);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
@@ -184,7 +184,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, ordinals, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, vectors[queryOrd], vectors, ordinals, expectedScores);
 
         var addressesSeg = arena.allocate(ValueLayout.ADDRESS.byteSize() * numVecs, ValueLayout.ADDRESS.byteAlignment());
         for (int i = 0; i < numVecs; i++) {
@@ -217,7 +217,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(vectors[queryOrd], vectors, offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, vectors[queryOrd], vectors, offsets, expectedScores);
 
         var nativeQuerySeg = vectorsSegment.asSlice((long) queryOrd * pitch, pitch);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
@@ -242,7 +242,7 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
-        scalarSimilarityBulkWithOffsets(values[queryOrd], values, offsets, expectedScores);
+        ScalarOperations.bulkWithOffsets(function, values[queryOrd], values, offsets, expectedScores);
 
         var nativeQuerySeg = segment.asSlice((long) queryOrd * dims, dims);
 
@@ -404,47 +404,6 @@ public class JDKVectorLibraryInt8Tests extends VectorSimilarityFunctionsTests {
             ).invokeExact(addresses, b, dims, count, result);
         } catch (Throwable t) {
             throw rethrow(t);
-        }
-    }
-
-    float scalarSimilarity(byte[] a, byte[] b) {
-        return switch (function) {
-            case COSINE -> ScalarOperations.cosine(a, b);
-            case DOT_PRODUCT -> ScalarOperations.dotProduct(a, b);
-            case SQUARE_DISTANCE -> ScalarOperations.squareDistance(a, b);
-        };
-    }
-
-    void scalarSimilarityBulk(byte[] query, byte[][] data, float[] scores) {
-        switch (function) {
-            case COSINE -> bulkScalar(ScalarOperations::cosine, query, data, scores);
-            case DOT_PRODUCT -> bulkScalar(ScalarOperations::dotProduct, query, data, scores);
-            case SQUARE_DISTANCE -> bulkScalar(ScalarOperations::squareDistance, query, data, scores);
-        }
-    }
-
-    void scalarSimilarityBulkWithOffsets(byte[] query, byte[][] data, int[] offsets, float[] scores) {
-        switch (function) {
-            case COSINE -> bulkWithOffsetsScalar(ScalarOperations::cosine, query, data, offsets, scores);
-            case DOT_PRODUCT -> bulkWithOffsetsScalar(ScalarOperations::dotProduct, query, data, offsets, scores);
-            case SQUARE_DISTANCE -> bulkWithOffsetsScalar(ScalarOperations::squareDistance, query, data, offsets, scores);
-        }
-    }
-
-    @FunctionalInterface
-    private interface Similarity {
-        float function(byte[] a, byte[] b);
-    }
-
-    static void bulkScalar(Similarity function, byte[] query, byte[][] data, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.function(query, data[i]);
-        }
-    }
-
-    static void bulkWithOffsetsScalar(Similarity function, byte[] query, byte[][] data, int[] offsets, float[] scores) {
-        for (int i = 0; i < data.length; i++) {
-            scores[i] = function.function(query, data[offsets[i]]);
         }
     }
 
