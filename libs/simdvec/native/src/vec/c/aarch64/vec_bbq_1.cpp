@@ -14,7 +14,6 @@
 
 #include <stddef.h>
 #include <arm_neon.h>
-#include <math.h>
 #include <algorithm>
 #include "vec.h"
 #include "vec_common.h"
@@ -110,7 +109,7 @@ static inline int64_t dotd1q4_inner(const int8_t* a, const int8_t* q, const int3
             bit_result[I] += __builtin_popcount(bits & value & 0xFF);
         });
     }
-    int sum = 0;
+    int64_t sum = 0;
     apply_indexed<query_bits>([&](auto I) {
         sum += (bit_result[I] << I);
     });
