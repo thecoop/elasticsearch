@@ -73,7 +73,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         for (int i = 0; i < numVecs; i++) {
             values[i] = vectorGeneratorFunc.apply(dims);
             long dstOffset = (long) i * dims * Float.BYTES;
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), JAVA_FLOAT_UNALIGNED, 0L, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
+            MemorySegment.copy(values[i], 0, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
         }
 
         final int loopTimes = 1000;
@@ -104,7 +104,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         for (int i = 0; i < numVecs; i++) {
             values[i] = randomFloatArray(dims);
             long dstOffset = (long) i * dims * Float.BYTES;
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), JAVA_FLOAT_UNALIGNED, 0L, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
+            MemorySegment.copy(values[i], 0, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
@@ -135,15 +135,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
             offsetsSegment.setAtIndex(ValueLayout.JAVA_INT, i, offsets[i]);
             vectors[i] = randomFloatArray(dims);
             long dstOffset = (long) i * dims * Float.BYTES;
-            MemorySegment.copy(
-                MemorySegment.ofArray(vectors[i]),
-                JAVA_FLOAT_UNALIGNED,
-                0L,
-                vectorsSegment,
-                LAYOUT_LE_FLOAT,
-                dstOffset,
-                dims
-            );
+            MemorySegment.copy(vectors[i], 0, vectorsSegment, LAYOUT_LE_FLOAT, dstOffset, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
@@ -172,15 +164,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
             offsetsSegment.setAtIndex(ValueLayout.JAVA_INT, i, offsets[i]);
             vectors[i] = randomFloatArray(dims);
             long dstOffset = (long) i * pitch;
-            MemorySegment.copy(
-                MemorySegment.ofArray(vectors[i]),
-                JAVA_FLOAT_UNALIGNED,
-                0L,
-                vectorsSegment,
-                LAYOUT_LE_FLOAT,
-                dstOffset,
-                dims
-            );
+            MemorySegment.copy(vectors[i], 0, vectorsSegment, LAYOUT_LE_FLOAT, dstOffset, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
@@ -205,7 +189,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
             offsets[i] = randomInt(numVecs - 1);
             values[i] = randomFloatArray(dims);
             long dstOffset = (long) i * dims * Float.BYTES;
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), JAVA_FLOAT_UNALIGNED, 0L, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
+            MemorySegment.copy(values[i], 0, segment, LAYOUT_LE_FLOAT, dstOffset, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];

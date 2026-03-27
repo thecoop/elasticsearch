@@ -81,7 +81,7 @@ public class JDKVectorLibraryLargeSegmentTests extends ESTestCase {
             byte[][] vectors = new byte[numVecs][];
             for (int i = 0; i < numVecs; i++) {
                 vectors[i] = randomByteArrayOfLength(dims);
-                MemorySegment.copy(MemorySegment.ofArray(vectors[i]), JAVA_BYTE, 0L, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
+                MemorySegment.copy(vectors[i], 0, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
             }
 
             var offsetsSegment = arena.allocate(Integer.BYTES);
@@ -109,7 +109,7 @@ public class JDKVectorLibraryLargeSegmentTests extends ESTestCase {
             byte[][] vectors = new byte[numVecs][];
             for (int i = 0; i < numVecs; i++) {
                 vectors[i] = randomByteArrayOfLength(dims);
-                MemorySegment.copy(MemorySegment.ofArray(vectors[i]), JAVA_BYTE, 0L, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
+                MemorySegment.copy(vectors[i], 0, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
             }
 
             var offsetsSegment = arena.allocate(Integer.BYTES);
@@ -137,7 +137,7 @@ public class JDKVectorLibraryLargeSegmentTests extends ESTestCase {
             byte[][] vectors = new byte[numVecs][];
             for (int i = 0; i < numVecs; i++) {
                 vectors[i] = randomByteArrayOfLength(dims);
-                MemorySegment.copy(MemorySegment.ofArray(vectors[i]), JAVA_BYTE, 0L, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
+                MemorySegment.copy(vectors[i], 0, vectorsSegment, JAVA_BYTE, (long) i * dims, dims);
             }
 
             var offsetsSegment = arena.allocate(Integer.BYTES);
@@ -166,15 +166,7 @@ public class JDKVectorLibraryLargeSegmentTests extends ESTestCase {
             for (int i = 0; i < numVecs; i++) {
                 vectors[i] = randomFloatArray(dims);
                 long dstOffset = (long) i * dims * Float.BYTES;
-                MemorySegment.copy(
-                    MemorySegment.ofArray(vectors[i]),
-                    JAVA_FLOAT_UNALIGNED,
-                    0L,
-                    vectorsSegment,
-                    JAVA_FLOAT_UNALIGNED,
-                    dstOffset,
-                    dims
-                );
+                MemorySegment.copy(vectors[i], 0, vectorsSegment, JAVA_FLOAT_UNALIGNED, dstOffset, dims);
             }
 
             int pitch = dims * Float.BYTES;

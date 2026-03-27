@@ -62,7 +62,7 @@ public class JDKVectorLibraryInt7uTests extends VectorSimilarityFunctionsTests {
         var segment = arena.allocate((long) dims * numVecs);
         for (int i = 0; i < numVecs; i++) {
             randomBytesBetween(values[i], MIN_INT7_VALUE, MAX_INT7_VALUE);
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), 0L, segment, (long) i * dims, dims);
+            MemorySegment.copy(values[i], 0, segment, ValueLayout.JAVA_BYTE, (long) i * dims, dims);
         }
 
         final int loopTimes = 1000;
@@ -97,7 +97,7 @@ public class JDKVectorLibraryInt7uTests extends VectorSimilarityFunctionsTests {
         var segment = arena.allocate((long) dims * numVecs);
         for (int i = 0; i < numVecs; i++) {
             randomBytesBetween(values[i], MIN_INT7_VALUE, MAX_INT7_VALUE);
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), 0L, segment, (long) i * dims, dims);
+            MemorySegment.copy(values[i], 0, segment, ValueLayout.JAVA_BYTE, (long) i * dims, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
@@ -295,7 +295,7 @@ public class JDKVectorLibraryInt7uTests extends VectorSimilarityFunctionsTests {
         for (int i = 0; i < numVecs; i++) {
             offsets[i] = randomInt(numVecs - 1);
             randomBytesBetween(values[i], MIN_INT7_VALUE, MAX_INT7_VALUE);
-            MemorySegment.copy(MemorySegment.ofArray(values[i]), 0L, segment, (long) i * dims, dims);
+            MemorySegment.copy(values[i], 0, segment, ValueLayout.JAVA_BYTE, (long) i * dims, dims);
         }
         int queryOrd = randomInt(numVecs - 1);
         float[] expectedScores = new float[numVecs];
