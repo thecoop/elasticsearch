@@ -22,7 +22,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.ToIntBiFunction;
 import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
@@ -104,15 +103,15 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
             var querySlice = querySegment.asSlice((long) queryIndex * queryVectorBytes, queryVectorBytes);
             var indexSlice = indexSegment.asSlice((long) indexIndex * indexVectorBytes, indexVectorBytes);
 
-            int expected = scalarSimilarity(unpackedQueryVectors[queryIndex], unpackedIndexVectors[indexIndex]);
-            assertEquals(expected, nativeSimilarity(indexSlice, querySlice, indexVectorBytes));
+            float expected = scalarSimilarity(unpackedQueryVectors[queryIndex], unpackedIndexVectors[indexIndex]);
+            assertEquals(expected, nativeSimilarity(indexSlice, querySlice, indexVectorBytes), 0f);
 
             if (supportsHeapSegments()) {
                 var queryHeapSegment = MemorySegment.ofArray(queryVectors[queryIndex]);
                 var indexHeapSegment = MemorySegment.ofArray(indexVectors[indexIndex]);
-                assertEquals(expected, nativeSimilarity(indexHeapSegment, queryHeapSegment, indexVectorBytes));
-                assertEquals(expected, nativeSimilarity(indexHeapSegment, querySlice, indexVectorBytes));
-                assertEquals(expected, nativeSimilarity(indexSlice, queryHeapSegment, indexVectorBytes));
+                assertEquals(expected, nativeSimilarity(indexHeapSegment, queryHeapSegment, indexVectorBytes), 0f);
+                assertEquals(expected, nativeSimilarity(indexHeapSegment, querySlice, indexVectorBytes), 0f);
+                assertEquals(expected, nativeSimilarity(indexSlice, queryHeapSegment, indexVectorBytes), 0f);
 
                 // trivial bulk with a single vector
                 float[] bulkScore = new float[1];
@@ -404,9 +403,9 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
         }
     }
 
-    int scalarSimilarity(byte[] a, byte[] b) {
+    float scalarSimilarity(byte[] a, byte[] b) {
         return switch (function) {
-            case DOT_PRODUCT -> dotProductScalar(a, b);
+            case DOT_PRODUCT -> ScalarOperations.dotProduct(a, b);
             case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
             case COSINE -> throw new AssumptionViolatedException("cosine not supported");
         };
@@ -414,41 +413,31 @@ public class JDKVectorLibraryBBQTests extends VectorSimilarityFunctionsTests {
 
     void scalarSimilarityBulk(byte[] query, byte[][] data, float[] scores) {
         switch (function) {
-            case DOT_PRODUCT -> bulkScalar(JDKVectorLibraryBBQTests::dotProductScalar, query, data, scores);
+            case DOT_PRODUCT -> bulkScalar(ScalarOperations::dotProduct, query, data, scores);
             case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
         }
     }
 
     void scalarSimilarityBulkWithOffsets(byte[] query, byte[][] data, int[] offsets, float[] scores) {
         switch (function) {
-            case DOT_PRODUCT -> bulkWithOffsetsScalar(JDKVectorLibraryBBQTests::dotProductScalar, query, data, offsets, scores);
+            case DOT_PRODUCT -> bulkWithOffsetsScalar(ScalarOperations::dotProduct, query, data, offsets, scores);
             case SQUARE_DISTANCE -> throw new AssumptionViolatedException("square distance not implemented");
         }
     }
 
-    static int dotProductScalar(byte[] a, byte[] b) {
-        int res = 0;
-        for (int i = 0; i < a.length; i++) {
-            res += a[i] * b[i];
-        }
-        return res;
+    private interface Operation {
+        float apply(byte[] a, byte[] b);
     }
 
-    static void bulkScalar(ToIntBiFunction<byte[], byte[]> function, byte[] query, byte[][] data, float[] scores) {
+    static void bulkScalar(Operation function, byte[] query, byte[][] data, float[] scores) {
         for (int i = 0; i < data.length; i++) {
-            scores[i] = function.applyAsInt(query, data[i]);
+            scores[i] = function.apply(query, data[i]);
         }
     }
 
-    static void bulkWithOffsetsScalar(
-        ToIntBiFunction<byte[], byte[]> function,
-        byte[] query,
-        byte[][] data,
-        int[] offsets,
-        float[] scores
-    ) {
+    static void bulkWithOffsetsScalar(Operation function, byte[] query, byte[][] data, int[] offsets, float[] scores) {
         for (int i = 0; i < data.length; i++) {
-            scores[i] = function.applyAsInt(query, data[offsets[i]]);
+            scores[i] = function.apply(query, data[offsets[i]]);
         }
     }
 

@@ -360,49 +360,24 @@ public class JDKVectorLibraryBFloat16Tests extends VectorSimilarityFunctionsTest
 
     float scalarSimilarity(float[] a, float[] b) {
         return switch (function) {
-            case DOT_PRODUCT -> dotProductScalar(a, b);
-            case SQUARE_DISTANCE -> squareDistanceScalar(a, b);
+            case DOT_PRODUCT -> ScalarOperations.dotProduct(a, b);
+            case SQUARE_DISTANCE -> ScalarOperations.squareDistance(a, b);
             case COSINE -> throw new AssumptionViolatedException("cosine not supported");
         };
     }
 
     void scalarSimilarityBulk(float[] query, float[][] data, float[] scores) {
         switch (function) {
-            case DOT_PRODUCT -> bulkScalar(JDKVectorLibraryBFloat16Tests::dotProductScalar, query, data, scores);
-            case SQUARE_DISTANCE -> bulkScalar(JDKVectorLibraryBFloat16Tests::squareDistanceScalar, query, data, scores);
+            case DOT_PRODUCT -> bulkScalar(ScalarOperations::dotProduct, query, data, scores);
+            case SQUARE_DISTANCE -> bulkScalar(ScalarOperations::squareDistance, query, data, scores);
         }
     }
 
     void scalarSimilarityBulkWithOffsets(float[] query, float[][] data, int[] offsets, float[] scores) {
         switch (function) {
-            case DOT_PRODUCT -> bulkWithOffsetsScalar(JDKVectorLibraryBFloat16Tests::dotProductScalar, query, data, offsets, scores);
-            case SQUARE_DISTANCE -> bulkWithOffsetsScalar(
-                JDKVectorLibraryBFloat16Tests::squareDistanceScalar,
-                query,
-                data,
-                offsets,
-                scores
-            );
+            case DOT_PRODUCT -> bulkWithOffsetsScalar(ScalarOperations::dotProduct, query, data, offsets, scores);
+            case SQUARE_DISTANCE -> bulkWithOffsetsScalar(ScalarOperations::squareDistance, query, data, offsets, scores);
         }
-    }
-
-    /** Computes the dot product of the given vectors a and b. */
-    static float dotProductScalar(float[] a, float[] b) {
-        float res = 0;
-        for (int i = 0; i < a.length; i++) {
-            res += a[i] * b[i];
-        }
-        return res;
-    }
-
-    /** Computes the dot product of the given vectors a and b. */
-    static float squareDistanceScalar(float[] a, float[] b) {
-        float squareSum = 0;
-        for (int i = 0; i < a.length; i++) {
-            float diff = a[i] - b[i];
-            squareSum += diff * diff;
-        }
-        return squareSum;
     }
 
     @FunctionalInterface
