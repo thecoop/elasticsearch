@@ -26,6 +26,8 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.oneOf;
 
 public class ES93HnswBFloat16VectorsFormatTests extends BaseHnswBFloat16VectorsFormatTestCase {
 
@@ -48,11 +50,16 @@ public class ES93HnswBFloat16VectorsFormatTests extends BaseHnswBFloat16VectorsF
         String expected =
             "ES93HnswVectorsFormat(name=ES93HnswVectorsFormat, maxConn=10, beamWidth=20, hnswGraphThreshold=150, flatVectorFormat=%s)";
         expected = format(Locale.ROOT, expected, "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)");
-        expected = format(Locale.ROOT, expected, "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat, flatVectorScorer=%s)");
-        expected = format(Locale.ROOT, expected, "ES93BFloat16FlatVectorScorer(delegate=DefaultFlatVectorScorer())");
+        expected = format(
+            Locale.ROOT,
+            expected,
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat, flatVectorScorer=ES93GenericFlatVectorScorer(delegate=%s()))"
+        );
+        String defaultScorer = format(Locale.ROOT, expected, "DefaultFlatVectorScorer");
+        String memSegScorer = format(Locale.ROOT, expected, "Lucene99MemorySegmentFlatVectorsScorer");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null);
-        assertThat(format, hasToString(expected));
+        assertThat(format, hasToString(is(oneOf(defaultScorer, memSegScorer))));
     }
 
     public void testSimpleOffHeapSize() throws IOException {

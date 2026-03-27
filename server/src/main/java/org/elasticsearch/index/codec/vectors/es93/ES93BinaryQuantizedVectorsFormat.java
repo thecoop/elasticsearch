@@ -19,7 +19,6 @@
  */
 package org.elasticsearch.index.codec.vectors.es93;
 
-import org.apache.lucene.codecs.hnsw.DefaultFlatVectorScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
@@ -91,10 +90,7 @@ public class ES93BinaryQuantizedVectorsFormat extends AbstractFlatVectorsFormat 
 
     public static final String NAME = "ES93BinaryQuantizedVectorsFormat";
 
-    // whilst the binary scorer should never get into a situation where it's trying to score
-    // raw values, it's still a good idea to use a fallback scorer that supports
-    // all the flat vector formats being used here, including bfloat16
-    private static final ES818BinaryFlatVectorsScorer scorer = new ES818BinaryFlatVectorsScorer(DefaultFlatVectorScorer.INSTANCE);
+    private static final ES818BinaryFlatVectorsScorer scorer = new ES818BinaryFlatVectorsScorer(ES93GenericFlatVectorScorer.INSTANCE);
 
     private final ES93GenericFlatVectorsFormat rawFormat;
 

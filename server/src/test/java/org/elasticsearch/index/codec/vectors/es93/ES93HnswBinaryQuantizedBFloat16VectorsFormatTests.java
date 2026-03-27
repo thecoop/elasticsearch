@@ -30,6 +30,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
+import static org.hamcrest.Matchers.oneOf;
 
 public class ES93HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseHnswBFloat16VectorsFormatTestCase {
 
@@ -67,18 +68,20 @@ public class ES93HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseHnswB
             Locale.ROOT,
             expected,
             "ES93BinaryQuantizedVectorsFormat(name=ES93BinaryQuantizedVectorsFormat, rawVectorFormat=%s,"
-                + " scorer=ES818BinaryFlatVectorsScorer(nonQuantizedDelegate=DefaultFlatVectorScorer()))"
+                + " scorer=ES818BinaryFlatVectorsScorer(nonQuantizedDelegate=ES93GenericFlatVectorScorer(delegate={}())))"
         );
         expected = format(Locale.ROOT, expected, "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)");
         expected = format(
             Locale.ROOT,
             expected,
-            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
-                + " flatVectorScorer=ES93BFloat16FlatVectorScorer(delegate=DefaultFlatVectorScorer()))"
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat," +
+                " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
         );
+        String defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
+        String memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null);
-        assertThat(format, hasToString(expected));
+        assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));
     }
 
     public void testSimpleOffHeapSize() throws IOException {
