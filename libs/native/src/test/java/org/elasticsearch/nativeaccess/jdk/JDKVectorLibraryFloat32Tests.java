@@ -112,7 +112,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         var nativeQuerySeg = segment.asSlice((long) queryOrd * dims * Float.BYTES, (long) dims * Float.BYTES);
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
         similarityBulk(segment, nativeQuerySeg, dims, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
 
         if (supportsHeapSegments()) {
             float[] bulkScores = new float[numVecs];
@@ -144,7 +144,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, dims * Float.BYTES, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testFloat32BulkWithOffsetsAndPitch() {
@@ -173,7 +173,7 @@ public class JDKVectorLibraryFloat32Tests extends VectorSimilarityFunctionsTests
         var bulkScoresSeg = arena.allocate((long) numVecs * Float.BYTES);
 
         similarityBulkWithOffsets(vectorsSegment, nativeQuerySeg, dims, pitch, offsetsSegment, numVecs, bulkScoresSeg);
-        assertScoresEquals(expectedScores, bulkScoresSeg);
+        assertScoresEquals(expectedScores, bulkScoresSeg, delta);
     }
 
     public void testFloat32BulkWithOffsetsHeapSegments() {
