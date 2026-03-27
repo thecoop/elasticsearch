@@ -191,8 +191,8 @@ public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16K
         expected = format(
             Locale.ROOT,
             expected,
-            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat," +
-                " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
+                + " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
         );
 
         var defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");

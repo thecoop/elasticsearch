@@ -74,8 +74,8 @@ public class ES93HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseHnswB
         expected = format(
             Locale.ROOT,
             expected,
-            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat," +
-                " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
+                + " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
         );
         String defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
         String memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
