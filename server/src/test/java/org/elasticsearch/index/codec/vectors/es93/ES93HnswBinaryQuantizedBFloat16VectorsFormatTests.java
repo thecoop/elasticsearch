@@ -68,16 +68,17 @@ public class ES93HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseHnswB
             Locale.ROOT,
             expected,
             "ES93BinaryQuantizedVectorsFormat(name=ES93BinaryQuantizedVectorsFormat, rawVectorFormat=%s,"
-                + " scorer=ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={}()))"
+                + " scorer=ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={}))"
         );
         expected = format(Locale.ROOT, expected, "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)");
         expected = format(
             Locale.ROOT,
             expected,
-            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat, flatVectorScorer={}())"
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
+                + " flatVectorScorer=ES93BFloat16FlatVectorScorer(delegate=DefaultFlatVectorScorer()))"
         );
-        String defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
-        String memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
+        String defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer()");
+        String memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer()");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null);
         assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));

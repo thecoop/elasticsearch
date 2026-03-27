@@ -186,16 +186,17 @@ public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16K
             Locale.ROOT,
             expected,
             "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)",
-            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={}())"
+            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={})"
         );
         expected = format(
             Locale.ROOT,
             expected,
-            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat, flatVectorScorer={}())"
+            "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
+                + " flatVectorScorer=ES93BFloat16FlatVectorScorer(delegate=DefaultFlatVectorScorer()))"
         );
 
-        var defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
-        var memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
+        var defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer()");
+        var memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer()");
 
         KnnVectorsFormat format = new ES93BinaryQuantizedVectorsFormat(DenseVectorFieldMapper.ElementType.BFLOAT16, false);
         assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));
