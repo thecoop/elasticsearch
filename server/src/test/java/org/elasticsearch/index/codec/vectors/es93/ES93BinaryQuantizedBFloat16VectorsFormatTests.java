@@ -63,7 +63,6 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
-import static org.hamcrest.Matchers.oneOf;
 
 public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16KnnVectorsFormatTestCase {
 
@@ -186,7 +185,7 @@ public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16K
             Locale.ROOT,
             expected,
             "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)",
-            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={})"
+            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate=DefaultFlatVectorScorer())"
         );
         expected = format(
             Locale.ROOT,
@@ -195,11 +194,8 @@ public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16K
                 + " flatVectorScorer=ES93BFloat16FlatVectorScorer(delegate=DefaultFlatVectorScorer()))"
         );
 
-        var defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer()");
-        var memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer()");
-
         KnnVectorsFormat format = new ES93BinaryQuantizedVectorsFormat(DenseVectorFieldMapper.ElementType.BFLOAT16, false);
-        assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));
+        assertThat(format, hasToString(expected));
     }
 
     @Override

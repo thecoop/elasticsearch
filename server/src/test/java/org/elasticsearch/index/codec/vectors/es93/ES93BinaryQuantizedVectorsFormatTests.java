@@ -200,7 +200,7 @@ public class ES93BinaryQuantizedVectorsFormatTests extends BaseKnnVectorsFormatT
             Locale.ROOT,
             expected,
             "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)",
-            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate={})"
+            "ES818BinaryFlatVectorsScorer(nonQuantizedDelegate=DefaultFlatVectorScorer())"
         );
         expected = format(
             Locale.ROOT,
