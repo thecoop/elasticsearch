@@ -33,6 +33,7 @@ import org.elasticsearch.core.IOUtils;
 import org.elasticsearch.index.codec.vectors.GenericFlatVectorReaders;
 import org.elasticsearch.search.vectors.ESAcceptDocs;
 import org.elasticsearch.search.vectors.IVFKnnSearchStrategy;
+import org.elasticsearch.simdvec.DefaultNativeFlatVectorScorer;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -421,7 +422,11 @@ public abstract class IVFVectorsReader<E extends IVFVectorsReader.FieldEntry> ex
         final FieldInfo fieldInfo = state.fieldInfos.fieldInfo(field);
         final ByteVectorValues values = getReaderForField(field).getByteVectorValues(field);
         for (int i = 0; i < values.size(); i++) {
-            final float score = fieldInfo.getVectorSimilarityFunction().compare(target, values.vectorValue(i));
+            final float score = DefaultNativeFlatVectorScorer.compare(
+                fieldInfo.getVectorSimilarityFunction(),
+                target,
+                values.vectorValue(i)
+            );
             knnCollector.collect(values.ordToDoc(i), score);
             if (knnCollector.earlyTerminated()) {
                 return;

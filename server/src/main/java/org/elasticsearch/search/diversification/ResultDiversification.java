@@ -12,6 +12,7 @@ package org.elasticsearch.search.diversification;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.elasticsearch.search.rank.RankDoc;
 import org.elasticsearch.search.vectors.VectorData;
+import org.elasticsearch.simdvec.DefaultNativeFlatVectorScorer;
 
 import java.io.IOException;
 
@@ -38,7 +39,7 @@ public abstract class ResultDiversification<C extends ResultDiversificationConte
         }
 
         return thisDocVector.isFloat()
-            ? similarityFunction.compare(thisDocVector.asFloatVector(), comparisonVector.asFloatVector())
-            : similarityFunction.compare(thisDocVector.asByteVector(), comparisonVector.asByteVector());
+            ? DefaultNativeFlatVectorScorer.compare(similarityFunction, thisDocVector.asFloatVector(), comparisonVector.asFloatVector())
+            : DefaultNativeFlatVectorScorer.compare(similarityFunction, thisDocVector.asByteVector(), comparisonVector.asByteVector());
     }
 }

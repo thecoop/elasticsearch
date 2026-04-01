@@ -10,7 +10,6 @@
 package org.elasticsearch.index.codec.vectors.es93;
 
 import org.apache.lucene.codecs.hnsw.DefaultFlatVectorScorer;
-import org.apache.lucene.codecs.hnsw.FlatVectorScorerUtil;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.lucene95.HasIndexSlice;
 import org.apache.lucene.index.ByteVectorValues;
@@ -20,6 +19,7 @@ import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.hnsw.RandomVectorScorerSupplier;
+import org.elasticsearch.simdvec.DefaultNativeFlatVectorScorer;
 import org.elasticsearch.simdvec.VectorScorerFactory;
 import org.elasticsearch.simdvec.VectorSimilarityType;
 
@@ -28,7 +28,7 @@ import java.util.Optional;
 
 public class ES93GenericFlatVectorScorer implements FlatVectorsScorer {
 
-    private static final FlatVectorsScorer FALLBACK = FlatVectorScorerUtil.getLucene99FlatVectorsScorer();
+    private static final FlatVectorsScorer FALLBACK = DefaultNativeFlatVectorScorer.INSTANCE;
     private static final VectorScorerFactory FACTORY = VectorScorerFactory.instance().orElse(null);
 
     public static final ES93GenericFlatVectorScorer INSTANCE = new ES93GenericFlatVectorScorer();

@@ -15,6 +15,7 @@ import org.apache.lucene.store.MemorySegmentAccessInput;
 import org.apache.lucene.util.VectorUtil;
 import org.apache.lucene.util.hnsw.RandomVectorScorerSupplier;
 import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
+import org.elasticsearch.simdvec.DefaultNativeFlatVectorScorer;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -98,7 +99,7 @@ public abstract class BFloat16VectorScorerSupplier implements RandomVectorScorer
         if (firstSeg == null) {
             firstVector = values.vectorValue(firstOrd).clone();
             for (int i = 0; i < numNodes; i++) {
-                scores[i] = fallbackScorer.compare(firstVector, values.vectorValue(ordinals[i]));
+                scores[i] = DefaultNativeFlatVectorScorer.compare(fallbackScorer, firstVector, values.vectorValue(ordinals[i]));
                 max = Math.max(max, scores[i]);
             }
         } else {
@@ -109,7 +110,7 @@ public abstract class BFloat16VectorScorerSupplier implements RandomVectorScorer
                     if (firstVector == null) {
                         firstVector = values.vectorValue(firstOrd).clone();
                     }
-                    scores[i] = fallbackScorer.compare(firstVector, values.vectorValue(ordinals[i]));
+                    scores[i] = DefaultNativeFlatVectorScorer.compare(fallbackScorer, firstVector, values.vectorValue(ordinals[i]));
                 } else {
                     scores[i] = scoreFromSegments(firstSeg, secondSeg);
                 }
@@ -152,7 +153,7 @@ public abstract class BFloat16VectorScorerSupplier implements RandomVectorScorer
     private float fallbackScore(int firstOrd, int secondOrd) throws IOException {
         float[] a = values.vectorValue(firstOrd).clone();
         float[] b = values.vectorValue(secondOrd);
-        return fallbackScorer.compare(a, b);
+        return DefaultNativeFlatVectorScorer.compare(fallbackScorer, a, b);
     }
 
     @Override

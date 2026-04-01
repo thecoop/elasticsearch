@@ -30,6 +30,7 @@ import org.apache.lucene.search.TopDocs;
 import org.elasticsearch.common.lucene.search.Queries;
 import org.elasticsearch.core.CheckedRunnable;
 import org.elasticsearch.search.profile.query.QueryProfiler;
+import org.elasticsearch.simdvec.DefaultNativeFlatVectorScorer;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -353,7 +354,7 @@ public abstract class RescoreKnnVectorQuery extends Query implements QueryProfil
                 }
                 buffer.add(() -> {
                     float[] vector = knnVectorValues.vectorValue(ord);
-                    float score = function.compare(floatTarget, vector);
+                    float score = DefaultNativeFlatVectorScorer.compare(function, floatTarget, vector);
                     if (Float.isNaN(score) == false) {
                         queue.add(new ScoreDoc(docID + docBase, score));
                     }
