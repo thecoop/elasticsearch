@@ -44,17 +44,10 @@ public class DefaultNativeFlatVectorScorer implements FlatVectorsScorer {
         VectorSimilarityFunction similarityFunction,
         KnnVectorValues vectorValues
     ) throws IOException {
-        switch (vectorValues.getEncoding()) {
-            case FLOAT32 -> {
-                return new FloatScoringSupplier((FloatVectorValues) vectorValues, similarityFunction);
-            }
-            case BYTE -> {
-                return new ByteScoringSupplier((ByteVectorValues) vectorValues, similarityFunction);
-            }
-        }
-        throw new IllegalArgumentException(
-            "vectorValues must be an instance of FloatVectorValues or ByteVectorValues, got a " + vectorValues.getClass().getName()
-        );
+        return switch (vectorValues.getEncoding()) {
+            case FLOAT32 -> new FloatScoringSupplier((FloatVectorValues) vectorValues, similarityFunction);
+            case BYTE -> new ByteScoringSupplier((ByteVectorValues) vectorValues, similarityFunction);
+        };
     }
 
     @Override
@@ -69,7 +62,7 @@ public class DefaultNativeFlatVectorScorer implements FlatVectorsScorer {
                 "vector query dimension: " + target.length + " differs from field dimension: " + vectorValues.dimension()
             );
         }
-        return new FloatVectorScorer((FloatVectorValues) vectorValues, target, similarityFunction);
+        return FloatVectorScorer.create((FloatVectorValues) vectorValues, target, similarityFunction);
     }
 
     @Override
@@ -84,7 +77,7 @@ public class DefaultNativeFlatVectorScorer implements FlatVectorsScorer {
                 "vector query dimension: " + target.length + " differs from field dimension: " + vectorValues.dimension()
             );
         }
-        return new ByteVectorScorer((ByteVectorValues) vectorValues, target, similarityFunction);
+        return ByteVectorScorer.create((ByteVectorValues) vectorValues, target, similarityFunction);
     }
 
     @Override
@@ -113,116 +106,221 @@ public class DefaultNativeFlatVectorScorer implements FlatVectorsScorer {
         };
     }
 
-    private static final class ByteScoringSupplier implements RandomVectorScorerSupplier {
+    private static class ByteScoringSupplier implements RandomVectorScorerSupplier {
         private final ByteVectorValues vectors;
         private final ByteVectorValues targetVectors;
-        private final VectorSimilarityFunction similarityFunction;
+        private final VectorSimilarityFunction function;
 
-        private ByteScoringSupplier(ByteVectorValues vectors, VectorSimilarityFunction similarityFunction) throws IOException {
+        private ByteScoringSupplier(ByteVectorValues vectors, VectorSimilarityFunction function) throws IOException {
             this.vectors = vectors;
             targetVectors = vectors.copy();
-            this.similarityFunction = similarityFunction;
+            this.function = function;
+        }
+
+        private abstract static class ByteUpdateableScorer extends UpdateableRandomVectorScorer.AbstractUpdateableRandomVectorScorer {
+            protected final byte[] vector;
+            protected final ByteVectorValues targetVectors;
+
+            private ByteUpdateableScorer(ByteVectorValues vectors, ByteVectorValues targetVectors) {
+                super(vectors);
+                this.vector = new byte[vectors.dimension()];
+                this.targetVectors = targetVectors;
+            }
+
+            @Override
+            public void setScoringOrdinal(int node) throws IOException {
+                System.arraycopy(targetVectors.vectorValue(node), 0, vector, 0, vector.length);
+            }
         }
 
         @Override
         public UpdateableRandomVectorScorer scorer() throws IOException {
-            byte[] vector = new byte[vectors.dimension()];
-            return new UpdateableRandomVectorScorer.AbstractUpdateableRandomVectorScorer(vectors) {
-
-                @Override
-                public void setScoringOrdinal(int node) throws IOException {
-                    System.arraycopy(targetVectors.vectorValue(node), 0, vector, 0, vector.length);
-                }
-
-                @Override
-                public float score(int node) throws IOException {
-                    return compare(similarityFunction, vector, targetVectors.vectorValue(node));
-                }
+            return switch (function) {
+                case EUCLIDEAN -> new ByteUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return 1 / (1f + ESVectorUtil.squareDistance(vector, targetVectors.vectorValue(node)));
+                    }
+                };
+                case DOT_PRODUCT -> new ByteUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        float denom = (float) (vector.length * (1 << 15));
+                        return 0.5f + ESVectorUtil.dotProduct(vector, targetVectors.vectorValue(node)) / denom;
+                    }
+                };
+                case COSINE -> new ByteUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return (1 + ESVectorUtil.cosine(vector, targetVectors.vectorValue(node))) / 2;
+                    }
+                };
+                case MAXIMUM_INNER_PRODUCT -> new ByteUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return scaleMaxInnerProductScore(ESVectorUtil.dotProduct(vector, targetVectors.vectorValue(node)));
+                    }
+                };
             };
         }
 
         @Override
         public RandomVectorScorerSupplier copy() throws IOException {
-            return new ByteScoringSupplier(vectors, similarityFunction);
+            return new ByteScoringSupplier(vectors, function);
         }
 
         @Override
         public String toString() {
-            return "ByteScoringSupplier(similarityFunction=" + similarityFunction + ")";
+            return "ByteScoringSupplier(similarityFunction=" + function + ")";
         }
     }
 
-    private static final class FloatScoringSupplier implements RandomVectorScorerSupplier {
+    private static class FloatScoringSupplier implements RandomVectorScorerSupplier {
         private final FloatVectorValues vectors;
         private final FloatVectorValues targetVectors;
-        private final VectorSimilarityFunction similarityFunction;
+        private final VectorSimilarityFunction function;
 
-        private FloatScoringSupplier(FloatVectorValues vectors, VectorSimilarityFunction similarityFunction) throws IOException {
+        private FloatScoringSupplier(FloatVectorValues vectors, VectorSimilarityFunction function) throws IOException {
             this.vectors = vectors;
             targetVectors = vectors.copy();
-            this.similarityFunction = similarityFunction;
+            this.function = function;
+        }
+
+        private abstract static class FloatUpdateableScorer extends UpdateableRandomVectorScorer.AbstractUpdateableRandomVectorScorer {
+            protected final float[] vector;
+            protected final FloatVectorValues targetVectors;
+
+            private FloatUpdateableScorer(FloatVectorValues vectors, FloatVectorValues targetVectors) {
+                super(vectors);
+                this.vector = new float[vectors.dimension()];
+                this.targetVectors = targetVectors;
+            }
+
+            @Override
+            public void setScoringOrdinal(int node) throws IOException {
+                System.arraycopy(targetVectors.vectorValue(node), 0, vector, 0, vector.length);
+            }
         }
 
         @Override
         public UpdateableRandomVectorScorer scorer() throws IOException {
-            float[] vector = new float[vectors.dimension()];
-            return new UpdateableRandomVectorScorer.AbstractUpdateableRandomVectorScorer(vectors) {
-                @Override
-                public float score(int node) throws IOException {
-                    return compare(similarityFunction, vector, targetVectors.vectorValue(node));
-                }
-
-                @Override
-                public void setScoringOrdinal(int node) throws IOException {
-                    System.arraycopy(targetVectors.vectorValue(node), 0, vector, 0, vector.length);
-                }
+            return switch (function) {
+                case EUCLIDEAN -> new FloatUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeDistanceToUnitInterval(ESVectorUtil.squareDistance(vector, targetVectors.vectorValue(node)));
+                    }
+                };
+                case DOT_PRODUCT -> new FloatUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeToUnitInterval(ESVectorUtil.dotProduct(vector, targetVectors.vectorValue(node)));
+                    }
+                };
+                case COSINE -> new FloatUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeToUnitInterval(VectorUtil.cosine(vector, targetVectors.vectorValue(node)));
+                    }
+                };
+                case MAXIMUM_INNER_PRODUCT -> new FloatUpdateableScorer(vectors, targetVectors) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return scaleMaxInnerProductScore(ESVectorUtil.dotProduct(vector, targetVectors.vectorValue(node)));
+                    }
+                };
             };
         }
 
         @Override
         public RandomVectorScorerSupplier copy() throws IOException {
-            return new FloatScoringSupplier(vectors, similarityFunction);
+            return new FloatScoringSupplier(vectors, function);
         }
 
         @Override
         public String toString() {
-            return "FloatScoringSupplier(similarityFunction=" + similarityFunction + ")";
+            return "FloatScoringSupplier(similarityFunction=" + function + ")";
         }
     }
 
-    private static class FloatVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
-        private final FloatVectorValues values;
-        private final float[] query;
-        private final VectorSimilarityFunction similarityFunction;
+    private abstract static class FloatVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
+        protected final FloatVectorValues values;
+        protected final float[] query;
 
-        FloatVectorScorer(FloatVectorValues values, float[] query, VectorSimilarityFunction similarityFunction) {
+        private FloatVectorScorer(FloatVectorValues values, float[] query) {
             super(values);
             this.values = values;
             this.query = query;
-            this.similarityFunction = similarityFunction;
         }
 
-        @Override
-        public float score(int node) throws IOException {
-            return compare(similarityFunction, query, values.vectorValue(node));
+        static FloatVectorScorer create(FloatVectorValues values, float[] query, VectorSimilarityFunction similarityFunction) {
+            return switch (similarityFunction) {
+                case EUCLIDEAN -> new FloatVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeDistanceToUnitInterval(ESVectorUtil.squareDistance(query, values.vectorValue(node)));
+                    }
+                };
+                case DOT_PRODUCT -> new FloatVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeToUnitInterval(ESVectorUtil.dotProduct(query, values.vectorValue(node)));
+                    }
+                };
+                case COSINE -> new FloatVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return normalizeToUnitInterval(VectorUtil.cosine(query, values.vectorValue(node)));
+                    }
+                };
+                case MAXIMUM_INNER_PRODUCT -> new FloatVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return scaleMaxInnerProductScore(ESVectorUtil.dotProduct(query, values.vectorValue(node)));
+                    }
+                };
+            };
         }
     }
 
-    private static class ByteVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
-        private final ByteVectorValues values;
-        private final byte[] query;
-        private final VectorSimilarityFunction similarityFunction;
+    private abstract static class ByteVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
+        protected final ByteVectorValues values;
+        protected final byte[] query;
 
-        ByteVectorScorer(ByteVectorValues values, byte[] query, VectorSimilarityFunction similarityFunction) {
+        private ByteVectorScorer(ByteVectorValues values, byte[] query) {
             super(values);
             this.values = values;
             this.query = query;
-            this.similarityFunction = similarityFunction;
         }
 
-        @Override
-        public float score(int node) throws IOException {
-            return compare(similarityFunction, query, values.vectorValue(node));
+        static ByteVectorScorer create(ByteVectorValues values, byte[] query, VectorSimilarityFunction similarityFunction) {
+            return switch (similarityFunction) {
+                case EUCLIDEAN -> new ByteVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return 1 / (1f + ESVectorUtil.squareDistance(query, values.vectorValue(node)));
+                    }
+                };
+                case DOT_PRODUCT -> new ByteVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        float denom = (float) (query.length * (1 << 15));
+                        return 0.5f + ESVectorUtil.dotProduct(query, values.vectorValue(node)) / denom;
+                    }
+                };
+                case COSINE -> new ByteVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return (1 + ESVectorUtil.cosine(query, values.vectorValue(node))) / 2;
+                    }
+                };
+                case MAXIMUM_INNER_PRODUCT -> new ByteVectorScorer(values, query) {
+                    @Override
+                    public float score(int node) throws IOException {
+                        return scaleMaxInnerProductScore(ESVectorUtil.dotProduct(query, values.vectorValue(node)));
+                    }
+                };
+            };
         }
     }
 }
