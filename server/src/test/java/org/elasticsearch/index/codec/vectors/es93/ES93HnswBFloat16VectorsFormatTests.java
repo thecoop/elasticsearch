@@ -26,8 +26,6 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.oneOf;
 
 public class ES93HnswBFloat16VectorsFormatTests extends BaseHnswBFloat16VectorsFormatTestCase {
 

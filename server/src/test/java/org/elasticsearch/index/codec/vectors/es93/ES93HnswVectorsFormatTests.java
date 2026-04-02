@@ -27,7 +27,6 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.oneOf;
 
 public class ES93HnswVectorsFormatTests extends BaseHnswVectorsFormatTestCase {
 

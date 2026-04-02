@@ -63,7 +63,6 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasToString;
-import static org.hamcrest.Matchers.oneOf;
 
 public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16KnnVectorsFormatTestCase {
 
