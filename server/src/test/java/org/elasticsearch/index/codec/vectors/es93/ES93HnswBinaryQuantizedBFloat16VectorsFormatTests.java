@@ -77,11 +77,10 @@ public class ES93HnswBinaryQuantizedBFloat16VectorsFormatTests extends BaseHnswB
             "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat,"
                 + " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
         );
-        String defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
-        String memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
+        String defaultScorer = expected.replaceAll("\\{}", "DefaultNativeFlatVectorScorer");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null);
-        assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));
+        assertThat(format, hasToString(defaultScorer));
     }
 
     public void testSimpleOffHeapSize() throws IOException {

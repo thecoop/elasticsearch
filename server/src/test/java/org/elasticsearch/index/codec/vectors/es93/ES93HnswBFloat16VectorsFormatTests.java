@@ -55,11 +55,10 @@ public class ES93HnswBFloat16VectorsFormatTests extends BaseHnswBFloat16VectorsF
             expected,
             "ES93BFloat16FlatVectorsFormat(name=ES93BFloat16FlatVectorsFormat, flatVectorScorer=ES93GenericFlatVectorScorer(delegate=%s()))"
         );
-        String defaultScorer = format(Locale.ROOT, expected, "DefaultFlatVectorScorer");
-        String memSegScorer = format(Locale.ROOT, expected, "Lucene99MemorySegmentFlatVectorsScorer");
+        String defaultScorer = format(Locale.ROOT, expected, "DefaultNativeFlatVectorScorer");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null);
-        assertThat(format, hasToString(is(oneOf(defaultScorer, memSegScorer))));
+        assertThat(format, hasToString(defaultScorer));
     }
 
     public void testSimpleOffHeapSize() throws IOException {

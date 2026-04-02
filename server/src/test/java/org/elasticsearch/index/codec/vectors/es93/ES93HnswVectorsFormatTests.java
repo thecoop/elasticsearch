@@ -93,11 +93,11 @@ public class ES93HnswVectorsFormatTests extends BaseHnswVectorsFormatTestCase {
         expected = format(Locale.ROOT, expected, "ES93GenericFlatVectorsFormat(name=ES93GenericFlatVectorsFormat, format=%s)");
         expected = format(Locale.ROOT, expected, "Lucene99FlatVectorsFormat(name=Lucene99FlatVectorsFormat, flatVectorScorer=%s)");
         expected = format(Locale.ROOT, expected, "ES93GenericFlatVectorScorer(delegate=%s)");
-        String defaultScorer = format(Locale.ROOT, expected, "DefaultFlatVectorScorer()");
-        String memSegScorer = format(Locale.ROOT, expected, "Lucene99MemorySegmentFlatVectorsScorer()");
+
+        String defaultScorer = format(Locale.ROOT, expected, "DefaultNativeFlatVectorScorer()");
 
         KnnVectorsFormat format = createFormat(10, 20, 1, null, hnswGraphThreshold);
-        assertThat(format, hasToString(is(oneOf(defaultScorer, memSegScorer))));
+        assertThat(format, hasToString(defaultScorer));
     }
 
     public void testSimpleOffHeapSize() throws IOException {

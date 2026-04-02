@@ -195,11 +195,10 @@ public class ES93BinaryQuantizedBFloat16VectorsFormatTests extends BaseBFloat16K
                 + " flatVectorScorer=ES93GenericFlatVectorScorer(delegate={}()))"
         );
 
-        var defaultScorer = expected.replaceAll("\\{}", "DefaultFlatVectorScorer");
-        var memSegScorer = expected.replaceAll("\\{}", "Lucene99MemorySegmentFlatVectorsScorer");
+        var defaultScorer = expected.replaceAll("\\{}", "DefaultNativeFlatVectorScorer");
 
         KnnVectorsFormat format = new ES93BinaryQuantizedVectorsFormat(DenseVectorFieldMapper.ElementType.BFLOAT16, false);
-        assertThat(format, hasToString(oneOf(defaultScorer, memSegScorer)));
+        assertThat(format, hasToString(defaultScorer));
     }
 
     @Override
