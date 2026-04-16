@@ -11,14 +11,17 @@ package org.elasticsearch.simdvec;
 
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.UnicodeUtil;
+import org.elasticsearch.index.codec.vectors.BFloat16;
 import org.elasticsearch.index.codec.vectors.BQVectorUtils;
 import org.elasticsearch.index.codec.vectors.OptimizedScalarQuantizer;
 import org.elasticsearch.index.codec.vectors.diskbbq.es94.ES940DiskBBQVectorsFormat;
 import org.elasticsearch.simdvec.internal.vectorization.BaseVectorizationTests;
 import org.elasticsearch.simdvec.internal.vectorization.ESVectorizationProvider;
 
+import java.nio.ShortBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.function.ToLongBiFunction;
 
 import static org.elasticsearch.simdvec.internal.vectorization.ESVectorUtilSupport.B_QUERY;
@@ -28,6 +31,34 @@ public class ESVectorUtilTests extends BaseVectorizationTests {
 
     static final ESVectorizationProvider defaultedProvider = BaseVectorizationTests.defaultProvider();
     static final ESVectorizationProvider defOrPanamaProvider = BaseVectorizationTests.maybePanamaProvider();
+
+    public void testBFloat16ToFloat() {
+        Random r = random();
+        short[] bFloats = new short[r.nextInt(1024)];
+        for (int i = 0; i < bFloats.length; i++) {
+            bFloats[i] = BFloat16.floatToBFloat16(r.nextFloat());
+        }
+        float[] defaultFloats = new float[bFloats.length];
+        defaultedProvider.getVectorUtilSupport().bFloat16ToFloat(ShortBuffer.wrap(bFloats), defaultFloats);
+        float[] panamaFloats = new float[bFloats.length];
+        defOrPanamaProvider.getVectorUtilSupport().bFloat16ToFloat(ShortBuffer.wrap(bFloats), panamaFloats);
+
+        assertArrayEquals(defaultFloats, panamaFloats, 0f);
+    }
+
+    public void testFloatToBFloat16() {
+        Random r = random();
+        float[] floats = new float[r.nextInt(1024)];
+        for (int i = 0; i < floats.length; i++) {
+            floats[i] = r.nextFloat();
+        }
+        short[] defaultBFloats = new short[floats.length];
+        defaultedProvider.getVectorUtilSupport().floatToBFloat16(floats, ShortBuffer.wrap(defaultBFloats));
+        short[] panamaBFloats = new short[floats.length];
+        defOrPanamaProvider.getVectorUtilSupport().floatToBFloat16(floats, ShortBuffer.wrap(panamaBFloats));
+
+        assertArrayEquals(defaultBFloats, panamaBFloats);
+    }
 
     public void testIpByteBit() {
         byte[] d = new byte[random().nextInt(128)];

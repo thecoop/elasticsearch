@@ -11,12 +11,20 @@ package org.elasticsearch.simdvec.internal.vectorization;
 
 import org.apache.lucene.util.BytesRef;
 
+import java.nio.ShortBuffer;
+
 public interface ESVectorUtilSupport {
 
     /**
      * The number of bits in bit-quantized query vectors
      */
     short B_QUERY = 4;
+
+    /** Converts bfloat16s to floats */
+    void bFloat16ToFloat(ShortBuffer bFloats, float[] floats);
+
+    /** Converts floats to bfloat16s */
+    void floatToBFloat16(float[] floats, ShortBuffer bFloats);
 
     /** Calculates the dot product of the given float arrays. */
     float dotProduct(float[] a, float[] b);
