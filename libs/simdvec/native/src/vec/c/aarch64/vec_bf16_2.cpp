@@ -15,6 +15,91 @@
 #include "vec_common.h"
 #include "aarch64/aarch64_vec_common.h"
 
+static inline svfloat32x2_t bf16_to_f32(svbfloat16_t bf16) {
+    const svuint16_t u16 = svreinterpret_u16_bf16(bf16);
+
+    svuint32_t low = svlsl_n_u32_x(svptrue_b32(), svunpklo_u32(u16), 16);
+    svuint32_t high = svlsl_n_u32_x(svptrue_b32(), svunpkhi_u32(u16), 16);
+
+    return svcreate2(svreinterpret_f32_u32(low), svreinterpret_f32_u32(high));
+}
+
+// take the low half only - ignore the high half
+static inline svfloat32_t low_bf16_to_f32(svbfloat16_t bf16) {
+    const svuint16_t u16 = svreinterpret_u16_bf16(bf16);
+
+    svuint32_t low = svlsl_n_u32_x(svptrue_b32(), svunpklo_u32(u16), 16);
+
+    return svreinterpret_f32_u32(low);
+}
+
+template<
+    svfloat32_t(*vector_op)(const svbool_t, const svfloat32_t, const svfloat32_t, const svfloat32_t),
+    f32_t(*scalar_op)(const bf16_t, const f32_t)
+>
+static inline f32_t bf16Qf32_inner_sve(const bfloat16_t* d, const f32_t* q, const int32_t elementCount) {
+    constexpr int batches = 8;
+    int i = 0;
+
+    svfloat32_t sum0 = svdup_f32(0.0f);
+    svfloat32_t sum1 = svdup_f32(0.0f);
+    svfloat32_t sum2 = svdup_f32(0.0f);
+    svfloat32_t sum3 = svdup_f32(0.0f);
+    svfloat32_t sum4 = svdup_f32(0.0f);
+    svfloat32_t sum5 = svdup_f32(0.0f);
+    svfloat32_t sum6 = svdup_f32(0.0f);
+    svfloat32_t sum7 = svdup_f32(0.0f);
+
+    const int elements = svcntw();
+    const int stride = elements * batches;
+    const svbool_t all16 = svptrue_b16();
+    const svbool_t all32 = svptrue_b32();
+    for (; i + stride <= elementCount; i += stride) {
+        // load 2 sets of bf16 vectors & extend
+        svfloat32x2_t bf0 = bf16_to_f32(svld1_vnum_bf16(all16, d + i, 0));
+        sum0 = vector_op(all32, sum0, svget2(bf0, 0), svld1_vnum(all32, q + i, 0));
+        sum1 = vector_op(all32, sum1, svget2(bf0, 1), svld1_vnum(all32, q + i, 1));
+
+        svfloat32x2_t bf1 = bf16_to_f32(svld1_vnum_bf16(all16, d + i, 1));
+        sum2 = vector_op(all32, sum2, svget2(bf1, 0), svld1_vnum(all32, q + i, 2));
+        sum3 = vector_op(all32, sum3, svget2(bf1, 1), svld1_vnum(all32, q + i, 3));
+
+        svfloat32x2_t bf2 = bf16_to_f32(svld1_vnum_bf16(all16, d + i, 2));
+        sum4 = vector_op(all32, sum4, svget2(bf2, 0), svld1_vnum(all32, q + i, 4));
+        sum5 = vector_op(all32, sum5, svget2(bf2, 1), svld1_vnum(all32, q + i, 5));
+
+        svfloat32x2_t bf3 = bf16_to_f32(svld1_vnum_bf16(all16, d + i, 3));
+        sum6 = vector_op(all32, sum6, svget2(bf3, 0), svld1_vnum(all32, q + i, 6));
+        sum7 = vector_op(all32, sum7, svget2(bf3, 1), svld1_vnum(all32, q + i, 7));
+    }
+
+    svfloat32_t sum = svadd_f32_x(all32,
+        svadd_f32_x(all32,
+            svadd_f32_x(all32, sum0, sum1),
+            svadd_f32_x(all32, sum2, sum3)),
+        svadd_f32_x(all32,
+             svadd_f32_x(all32, sum4, sum5),
+             svadd_f32_x(all32, sum6, sum7)));
+
+    f32_t result = svaddv_f32(all32, sum);
+
+    // scalar tail is faster on Grav3/4 than using predicated SVE instructions
+    const bf16_t* d_bf16 = (const bf16_t*)d;
+    for (; i < elementCount; ++i) {
+        result += scalar_op(d_bf16[i], q[i]);
+    }
+
+    return result;
+}
+
+static inline svfloat32_t dotf32_vector(svbool_t pg, svfloat32_t sum, svfloat32_t a, svfloat32_t b) {
+    return svmla_m(pg, sum, a, b);
+}
+
+EXPORT f32_t vec_dotDbf16Qf32_2(const bf16_t* a, const f32_t* b, const int32_t elementCount) {
+    return bf16Qf32_inner_sve<dotf32_vector, dot_scalar>((const bfloat16_t*)a, b, elementCount);
+}
+
 static inline f32_t dotDbf16Qbf16_inner_sve(const bfloat16_t* d, const bfloat16_t* q, const int32_t elementCount) {
     constexpr int batches = 8;
     int i = 0;
@@ -63,6 +148,15 @@ static inline f32_t dotDbf16Qbf16_inner_sve(const bfloat16_t* d, const bfloat16_
 
 EXPORT f32_t vec_dotDbf16Qbf16_2(const bf16_t* a, const bf16_t* b, const int32_t elementCount) {
     return dotDbf16Qbf16_inner_sve((const bfloat16_t*)a, (const bfloat16_t*)b, elementCount);
+}
+
+static inline svfloat32_t sqrf32_vector(svbool_t pg, svfloat32_t sum, svfloat32_t a, svfloat32_t b) {
+    svfloat32_t diff = svsub_x(pg, a, b);
+    return svmla_m(pg, sum, diff, diff);
+}
+
+EXPORT f32_t vec_sqrDbf16Qf32_2(const bf16_t* a, const f32_t* b, const int32_t elementCount) {
+    return bf16Qf32_inner_sve<sqrf32_vector, sqr_scalar>((const bfloat16_t*)a, b, elementCount);
 }
 
 /*
