@@ -10,6 +10,7 @@
 // BF16 vector implementations for ARM SVE processors
 
 #include <stddef.h>
+#include <algorithm>
 #include <arm_sve.h>
 #include "vec.h"
 #include "vec_common.h"
@@ -92,6 +93,111 @@ static inline f32_t bf16Qf32_inner_sve(const bfloat16_t* d, const f32_t* q, cons
     return result;
 }
 
+template <
+    typename TData,
+    const bf16_t*(*mapper)(const TData*, const int32_t, const int32_t*, const int32_t),
+    svfloat32_t(*vector_op)(const svbool_t, const svfloat32_t, const svfloat32_t, const svfloat32_t),
+    f32_t(*scalar_op)(const bf16_t, const f32_t),
+    f32_t(*bulk_tail)(const bf16_t*, const f32_t*, const int32_t)
+>
+static inline void bf16Qf32_bulk_sve(
+    const TData* a,
+    const f32_t* b,
+    const int32_t dims,
+    const int32_t pitch,
+    const int32_t* offsets,
+    const int32_t count,
+    f32_t* results
+) {
+    constexpr int batches = 8;
+
+    int c = 0;
+    const int elements = svcntw();
+    const int stride = elements * 2;    // two f32 vectors per inner loop
+
+    for (; c + batches <= count; c += batches) {
+        svfloat32_t sums0 = svdup_f32(0.0f);
+        svfloat32_t sums1 = svdup_f32(0.0f);
+        svfloat32_t sums2 = svdup_f32(0.0f);
+        svfloat32_t sums3 = svdup_f32(0.0f);
+        svfloat32_t sums4 = svdup_f32(0.0f);
+        svfloat32_t sums5 = svdup_f32(0.0f);
+        svfloat32_t sums6 = svdup_f32(0.0f);
+        svfloat32_t sums7 = svdup_f32(0.0f);
+
+        const bfloat16_t* as[batches];
+        apply_indexed<batches>([&](auto I) {
+            as[I] = (const bfloat16_t*)mapper(a, c + I, offsets, pitch);
+        });
+
+        int i = 0;
+        const svbool_t all16 = svptrue_b16();
+        const svbool_t all32 = svptrue_b32();
+        for (; i + stride <= dims; i += stride) {
+            // one bf16 register equals 2 f32 registers
+            svfloat32_t qi0 = svld1_f32(all32, b + i);
+            svfloat32_t qi1 = svld1_f32(all32, b + i + elements);
+
+            svfloat32x2_t av0 = bf16_to_f32(svld1(all16, as[0] + i));
+            sums0 = vector_op(all32, sums0, svget2(av0, 0), qi0);
+            sums0 = vector_op(all32, sums0, svget2(av0, 1), qi1);
+
+            svfloat32x2_t av1 = bf16_to_f32(svld1(all16, as[1] + i));
+            sums1 = vector_op(all32, sums1, svget2(av1, 0), qi0);
+            sums1 = vector_op(all32, sums1, svget2(av1, 1), qi1);
+
+            svfloat32x2_t av2 = bf16_to_f32(svld1(all16, as[2] + i));
+            sums2 = vector_op(all32, sums2, svget2(av2, 0), qi0);
+            sums2 = vector_op(all32, sums2, svget2(av2, 1), qi1);
+
+            svfloat32x2_t av3 = bf16_to_f32(svld1(all16, as[3] + i));
+            sums3 = vector_op(all32, sums3, svget2(av3, 0), qi0);
+            sums3 = vector_op(all32, sums3, svget2(av3, 1), qi1);
+
+            svfloat32x2_t av4 = bf16_to_f32(svld1(all16, as[4] + i));
+            sums4 = vector_op(all32, sums4, svget2(av4, 0), qi0);
+            sums4 = vector_op(all32, sums4, svget2(av4, 1), qi1);
+
+            svfloat32x2_t av5 = bf16_to_f32(svld1(all16, as[5] + i));
+            sums5 = vector_op(all32, sums5, svget2(av5, 0), qi0);
+            sums5 = vector_op(all32, sums5, svget2(av5, 1), qi1);
+
+            svfloat32x2_t av6 = bf16_to_f32(svld1(all16, as[6] + i));
+            sums6 = vector_op(all32, sums6, svget2(av6, 0), qi0);
+            sums6 = vector_op(all32, sums6, svget2(av6, 1), qi1);
+
+            svfloat32x2_t av7 = bf16_to_f32(svld1(all16, as[7] + i));
+            sums7 = vector_op(all32, sums7, svget2(av7, 0), qi0);
+            sums7 = vector_op(all32, sums7, svget2(av7, 1), qi1);
+        }
+
+        f32_t res[batches];
+        res[0] = svaddv_f32(all32, sums0);
+        res[1] = svaddv_f32(all32, sums1);
+        res[2] = svaddv_f32(all32, sums2);
+        res[3] = svaddv_f32(all32, sums3);
+        res[4] = svaddv_f32(all32, sums4);
+        res[5] = svaddv_f32(all32, sums5);
+        res[6] = svaddv_f32(all32, sums6);
+        res[7] = svaddv_f32(all32, sums7);
+
+        // complete vector tail using scalar ops (faster than predicated SIMD on Grav3/4)
+        for (; i < dims; i++) {
+            apply_indexed<batches>([&](auto I) {
+                res[I] += scalar_op(((const bf16_t*)as[I])[i], b[i]);
+            });
+        }
+
+        std::copy_n(res, batches, results + c);
+    }
+
+    // vectors tail
+    for (; c < count; c++) {
+        const bf16_t* a0 = mapper(a, c, offsets, pitch);
+        results[c] = bulk_tail(a0, b, dims);
+    }
+}
+
 static inline svfloat32_t dotf32_vector(svbool_t pg, svfloat32_t sum, svfloat32_t a, svfloat32_t b) {
     return svmla_m(pg, sum, a, b);
 }
@@ -157,6 +263,76 @@ static inline svfloat32_t sqrf32_vector(svbool_t pg, svfloat32_t sum, svfloat32_
 
 EXPORT f32_t vec_sqrDbf16Qf32_2(const bf16_t* a, const f32_t* b, const int32_t elementCount) {
     return bf16Qf32_inner_sve<sqrf32_vector, sqr_scalar>((const bfloat16_t*)a, b, elementCount);
+}
+
+EXPORT void vec_dotDbf16Qf32_bulk_2(
+    const bf16_t* a,
+    const f32_t* b,
+    const int32_t dims,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<bf16_t, sequential_mapper, dotf32_vector, dot_scalar, vec_dotDbf16Qf32_2>(
+        a, b, dims, dims, NULL, count, results);
+}
+
+EXPORT void vec_dotDbf16Qf32_bulk_sparse_2(
+    const void* const* addresses,
+    const f32_t* query,
+    const int32_t length,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<const bf16_t*, sparse_mapper, dotf32_vector, dot_scalar, vec_dotDbf16Qf32_2>(
+        (const bf16_t* const*)addresses, query, length, 0, NULL, count, results);
+}
+
+EXPORT void vec_dotDbf16Qf32_bulk_offsets_2(
+    const bf16_t* a,
+    const f32_t* b,
+    const int32_t dims,
+    const int32_t pitch,
+    const int32_t* offsets,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<bf16_t, offsets_mapper, dotf32_vector, dot_scalar, vec_dotDbf16Qf32_2>(
+        a, b, dims, pitch / sizeof(bf16_t), offsets, count, results);
+}
+
+EXPORT void vec_sqrDbf16Qf32_bulk_2(
+    const bf16_t* a,
+    const f32_t* b,
+    const int32_t dims,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<bf16_t, sequential_mapper, sqrf32_vector, sqr_scalar, vec_sqrDbf16Qf32_2>(
+        a, b, dims, dims, NULL, count, results);
+}
+
+EXPORT void vec_sqrDbf16Qf32_bulk_sparse_2(
+    const void* const* addresses,
+    const f32_t* query,
+    const int32_t length,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<const bf16_t*, sparse_mapper, sqrf32_vector, sqr_scalar, vec_sqrDbf16Qf32_2>(
+        (const bf16_t* const*)addresses, query, length, 0, NULL, count, results);
+}
+
+EXPORT void vec_sqrDbf16Qf32_bulk_offsets_2(
+    const bf16_t* a,
+    const f32_t* b,
+    const int32_t dims,
+    const int32_t pitch,
+    const int32_t* offsets,
+    const int32_t count,
+    f32_t* results
+) {
+    bf16Qf32_bulk_sve<bf16_t, offsets_mapper, sqrf32_vector, sqr_scalar, vec_sqrDbf16Qf32_2>(
+        a, b, dims, pitch / sizeof(bf16_t), offsets, count, results);
 }
 
 /*
@@ -274,8 +450,6 @@ EXPORT f32_t vec_sqrDbf16Qbf16_2(const bf16_t* a, const bf16_t* b, const int32_t
     return sqrDbf16Qbf16_inner_sve((const bfloat16_t*)a, (const bfloat16_t*)b, elementCount);
 }
 
-// --- Bulk operations ---
-
 /*
  * Bulk dot product for bf16×bf16 using bfdot.
  * Loads query once per dimension step, applies to all vectors in the batch.
@@ -321,14 +495,14 @@ static inline void dotDbf16Qbf16_bulk_sve(
         for (; i < dims; i += elements) {
             svbool_t pg = svwhilelt_b16(i, dims);
             svbfloat16_t qi = svld1_bf16(pg, (const bfloat16_t*)(b + i));
-            sums0 = svbfdot_f32(sums0, svld1_bf16(pg, (const bfloat16_t*)(a0 + i)), qi);
-            sums1 = svbfdot_f32(sums1, svld1_bf16(pg, (const bfloat16_t*)(a1 + i)), qi);
-            sums2 = svbfdot_f32(sums2, svld1_bf16(pg, (const bfloat16_t*)(a2 + i)), qi);
-            sums3 = svbfdot_f32(sums3, svld1_bf16(pg, (const bfloat16_t*)(a3 + i)), qi);
-            sums4 = svbfdot_f32(sums4, svld1_bf16(pg, (const bfloat16_t*)(a4 + i)), qi);
-            sums5 = svbfdot_f32(sums5, svld1_bf16(pg, (const bfloat16_t*)(a5 + i)), qi);
-            sums6 = svbfdot_f32(sums6, svld1_bf16(pg, (const bfloat16_t*)(a6 + i)), qi);
-            sums7 = svbfdot_f32(sums7, svld1_bf16(pg, (const bfloat16_t*)(a7 + i)), qi);
+            sums0 = svbfdot_f32(sums0, svld1_bf16(pg, a0 + i), qi);
+            sums1 = svbfdot_f32(sums1, svld1_bf16(pg, a1 + i), qi);
+            sums2 = svbfdot_f32(sums2, svld1_bf16(pg, a2 + i), qi);
+            sums3 = svbfdot_f32(sums3, svld1_bf16(pg, a3 + i), qi);
+            sums4 = svbfdot_f32(sums4, svld1_bf16(pg, a4 + i), qi);
+            sums5 = svbfdot_f32(sums5, svld1_bf16(pg, a5 + i), qi);
+            sums6 = svbfdot_f32(sums6, svld1_bf16(pg, a6 + i), qi);
+            sums7 = svbfdot_f32(sums7, svld1_bf16(pg, a7 + i), qi);
         }
 
         const svbool_t all32 = svptrue_b32();
@@ -441,35 +615,35 @@ static inline void sqrDbf16Qbf16_bulk_sve(
             svbfloat16_t bi = svld1_bf16(pg, (const bfloat16_t*)(b + i));
             sum_bb = svbfdot_f32(sum_bb, bi, bi);
 
-            svbfloat16_t ai0 = svld1_bf16(pg, (const bfloat16_t*)(a0 + i));
+            svbfloat16_t ai0 = svld1_bf16(pg, a0 + i);
             sum_aa0 = svbfdot_f32(sum_aa0, ai0, ai0);
             sum_ab0 = svbfdot_f32(sum_ab0, ai0, bi);
 
-            svbfloat16_t ai1 = svld1_bf16(pg, (const bfloat16_t*)(a1 + i));
+            svbfloat16_t ai1 = svld1_bf16(pg, a1 + i);
             sum_aa1 = svbfdot_f32(sum_aa1, ai1, ai1);
             sum_ab1 = svbfdot_f32(sum_ab1, ai1, bi);
 
-            svbfloat16_t ai2 = svld1_bf16(pg, (const bfloat16_t*)(a2 + i));
+            svbfloat16_t ai2 = svld1_bf16(pg, a2 + i);
             sum_aa2 = svbfdot_f32(sum_aa2, ai2, ai2);
             sum_ab2 = svbfdot_f32(sum_ab2, ai2, bi);
 
-            svbfloat16_t ai3 = svld1_bf16(pg, (const bfloat16_t*)(a3 + i));
+            svbfloat16_t ai3 = svld1_bf16(pg, a3 + i);
             sum_aa3 = svbfdot_f32(sum_aa3, ai3, ai3);
             sum_ab3 = svbfdot_f32(sum_ab3, ai3, bi);
 
-            svbfloat16_t ai4 = svld1_bf16(pg, (const bfloat16_t*)(a4 + i));
+            svbfloat16_t ai4 = svld1_bf16(pg, a4 + i);
             sum_aa4 = svbfdot_f32(sum_aa4, ai4, ai4);
             sum_ab4 = svbfdot_f32(sum_ab4, ai4, bi);
 
-            svbfloat16_t ai5 = svld1_bf16(pg, (const bfloat16_t*)(a5 + i));
+            svbfloat16_t ai5 = svld1_bf16(pg, a5 + i);
             sum_aa5 = svbfdot_f32(sum_aa5, ai5, ai5);
             sum_ab5 = svbfdot_f32(sum_ab5, ai5, bi);
 
-            svbfloat16_t ai6 = svld1_bf16(pg, (const bfloat16_t*)(a6 + i));
+            svbfloat16_t ai6 = svld1_bf16(pg, a6 + i);
             sum_aa6 = svbfdot_f32(sum_aa6, ai6, ai6);
             sum_ab6 = svbfdot_f32(sum_ab6, ai6, bi);
 
-            svbfloat16_t ai7 = svld1_bf16(pg, (const bfloat16_t*)(a7 + i));
+            svbfloat16_t ai7 = svld1_bf16(pg, a7 + i);
             sum_aa7 = svbfdot_f32(sum_aa7, ai7, ai7);
             sum_ab7 = svbfdot_f32(sum_ab7, ai7, bi);
         }
