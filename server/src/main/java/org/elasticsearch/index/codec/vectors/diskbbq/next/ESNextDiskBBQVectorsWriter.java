@@ -1386,7 +1386,11 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             ? Math.max(1, (int) (spannParams.maxPostingFactor() * vectorPerCluster))
             : Integer.MAX_VALUE;
         final int[][] membership = new int[numCentroids][];
+        long preTrimMembers = 0;
+        long postTrimMembers = 0;
+        int maxPosting = 0;
         for (int c = 0; c < numCentroids; c++) {
+            preTrimMembers += memberOrds[c].length;
             if (memberOrds[c].length <= trimCap) {
                 membership[c] = memberOrds[c];
             } else {
@@ -1403,7 +1407,20 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
                 }
                 membership[c] = kept;
             }
+            postTrimMembers += membership[c].length;
+            maxPosting = Math.max(maxPosting, membership[c].length);
         }
+        // experiment diagnostic: how much did SPANN overspill actually replicate? (1.0 == no overspill)
+        final int numVectors = replicas.length;
+        logger.info(
+            "SPANN overspill: {} vectors, {} centroids, replication factor pre-trim={}, post-trim={} (trimCap={}, maxPosting={})",
+            numVectors,
+            numCentroids,
+            numVectors == 0 ? 0f : (float) preTrimMembers / numVectors,
+            numVectors == 0 ? 0f : (float) postTrimMembers / numVectors,
+            trimCap == Integer.MAX_VALUE ? -1 : trimCap,
+            maxPosting
+        );
         return membership;
     }
 
