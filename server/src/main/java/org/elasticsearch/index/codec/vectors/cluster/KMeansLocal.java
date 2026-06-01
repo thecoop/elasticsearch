@@ -270,6 +270,9 @@ abstract class KMeansLocal<V> {
             kMeansIntermediate.setSoarAssignments(new int[vectors.size()]);
             assignSpilled(vectors, kMeansIntermediate, neighborhoods, soarLambda);
         }
+        // Expose the (remapped) neighbourhoods so callers can reuse them instead of recomputing centroid
+        // nearest neighbours. They are aligned with the final centroid ordinals (see removeEmptyClusters).
+        kMeansIntermediate.setNeighborhoods(neighborhoods);
     }
 
     protected abstract void innerCluster(
@@ -340,16 +343,32 @@ abstract class KMeansLocal<V> {
         kMeansIntermediate.setCentroids(newCentroids, newClusterCounts);
 
         if (neighborhoods != null) {
-            // This change will cause that neighborhoods.length > newCentroids.length.
-            // Doing it like this avoids more memory allocations and is fine as long as
-            // we do not use neighborhoods.length to get the number of clusters.
+            // Recover the neighbourhoods for the surviving centroids in the new (compacted) ordinal space:
+            // drop neighbours that pointed to removed centroids and remap the rest. This keeps the
+            // neighbourhoods correct (so they can be reused, e.g. to bootstrap a centroid graph) instead of
+            // collapsing removed-centroid neighbour ids to ordinal 0. Entries beyond effectiveK are left
+            // stale, as before, so callers must not rely on neighborhoods.length for the cluster count.
+            // The in-place rewrite is safe because each surviving centroid c maps to centroidIndexMap[c] <= c,
+            // so we always read neighborhoods[c] before overwriting any lower slot.
             for (int c = 0; c < centroids.length; c++) {
-                neighborhoods[centroidIndexMap[c]] = neighborhoods[c];
-                int[] neighbors = neighborhoods[c].neighbors();
-                for (int i = 0; i < neighbors.length; i++) {
-                    neighbors[i] = centroidIndexMap[neighbors[i]];
+                if (centroidVectorCount[c] == 0) {
+                    continue; // removed centroid; its neighbourhood is dropped
                 }
-                neighborhoods[centroidIndexMap[c]] = neighborhoods[c];
+                final int[] oldNeighbors = neighborhoods[c].neighbors();
+                int survivorCount = 0;
+                for (int neighbor : oldNeighbors) {
+                    if (centroidVectorCount[neighbor] > 0) {
+                        survivorCount++;
+                    }
+                }
+                final int[] newNeighbors = new int[survivorCount];
+                int w = 0;
+                for (int neighbor : oldNeighbors) {
+                    if (centroidVectorCount[neighbor] > 0) {
+                        newNeighbors[w++] = centroidIndexMap[neighbor];
+                    }
+                }
+                neighborhoods[centroidIndexMap[c]] = new NeighborHood(newNeighbors, neighborhoods[c].maxIntraDistance());
             }
         }
     }

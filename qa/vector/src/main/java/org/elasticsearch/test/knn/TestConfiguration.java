@@ -79,6 +79,11 @@ public record TestConfiguration(
     int preconditioningBlockDims,
     int flatVectorThreshold,
     int secondaryClusterSize,
+    // Experiment-only IVF centroid HNSW graph knobs (see ESNextDiskBBQVectorsFormat#indexCentroidsInGraph)
+    boolean indexCentroidsInGraph,
+    int centroidHnswM,
+    int centroidHnswBeamWidth,
+    int centroidGraphEfSearch,
     String directoryType,
     DatasetConfig datasetConfig
 ) {
@@ -122,6 +127,10 @@ public record TestConfiguration(
     static final ParseField FILTER_CACHED = new ParseField("filter_cache");
     static final ParseField SEARCH_PARAMS = new ParseField("search_params");
     static final ParseField FLAT_VECTOR_THRESHOLD = new ParseField("flat_vector_threshold");
+    static final ParseField INDEX_CENTROIDS_IN_GRAPH = new ParseField("index_centroids_in_graph");
+    static final ParseField CENTROID_HNSW_M = new ParseField("centroid_hnsw_m");
+    static final ParseField CENTROID_HNSW_BEAM_WIDTH = new ParseField("centroid_hnsw_beam_width");
+    static final ParseField CENTROID_GRAPH_EF_SEARCH = new ParseField("centroid_graph_ef_search");
     static final ParseField DIRECTORY_TYPE_FIELD = new ParseField("directory_type");
 
     /** By default, in ES the default writer buffer size is 10% of the heap space
@@ -193,6 +202,10 @@ public record TestConfiguration(
         PARSER.declareInt(Builder::setMergeWorkers, MERGE_WORKERS_FIELD);
         PARSER.declareInt(Builder::setFlatVectorThreshold, FLAT_VECTOR_THRESHOLD);
         PARSER.declareInt(Builder::setSecondaryClusterSize, SECONDARY_CLUSTER_SIZE);
+        PARSER.declareBoolean(Builder::setIndexCentroidsInGraph, INDEX_CENTROIDS_IN_GRAPH);
+        PARSER.declareInt(Builder::setCentroidHnswM, CENTROID_HNSW_M);
+        PARSER.declareInt(Builder::setCentroidHnswBeamWidth, CENTROID_HNSW_BEAM_WIDTH);
+        PARSER.declareInt(Builder::setCentroidGraphEfSearch, CENTROID_GRAPH_EF_SEARCH);
         PARSER.declareString(Builder::setDirectoryType, DIRECTORY_TYPE_FIELD);
     }
 
@@ -419,6 +432,10 @@ public record TestConfiguration(
         private int flatVectorThreshold = -1; // -1 mean use default (vectorPerCluster * 3)
         private int secondaryClusterSize = -1;
         private int flatIndexThreshold = -1; // use format's default threshold
+        private boolean indexCentroidsInGraph = false;
+        private int centroidHnswM = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_HNSW_M;
+        private int centroidHnswBeamWidth = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_HNSW_BEAM_WIDTH;
+        private int centroidGraphEfSearch = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_GRAPH_EF_SEARCH;
         private String directoryType = "default";
 
         /**
@@ -632,6 +649,26 @@ public record TestConfiguration(
 
         public Builder setSecondaryClusterSize(int secondaryClusterSize) {
             this.secondaryClusterSize = secondaryClusterSize;
+            return this;
+        }
+
+        public Builder setIndexCentroidsInGraph(boolean indexCentroidsInGraph) {
+            this.indexCentroidsInGraph = indexCentroidsInGraph;
+            return this;
+        }
+
+        public Builder setCentroidHnswM(int centroidHnswM) {
+            this.centroidHnswM = centroidHnswM;
+            return this;
+        }
+
+        public Builder setCentroidHnswBeamWidth(int centroidHnswBeamWidth) {
+            this.centroidHnswBeamWidth = centroidHnswBeamWidth;
+            return this;
+        }
+
+        public Builder setCentroidGraphEfSearch(int centroidGraphEfSearch) {
+            this.centroidGraphEfSearch = centroidGraphEfSearch;
             return this;
         }
 
@@ -915,6 +952,10 @@ public record TestConfiguration(
                 preconditioningBlockDims,
                 flatVectorThreshold,
                 secondaryClusterSize,
+                indexCentroidsInGraph,
+                centroidHnswM,
+                centroidHnswBeamWidth,
+                centroidGraphEfSearch,
                 directoryType,
                 datasetConfig
             );
@@ -977,6 +1018,10 @@ public record TestConfiguration(
                 builder.field(SEARCH_PARAMS.getPreferredName(), searchParams);
             }
             builder.field(FLAT_VECTOR_THRESHOLD.getPreferredName(), flatVectorThreshold);
+            builder.field(INDEX_CENTROIDS_IN_GRAPH.getPreferredName(), indexCentroidsInGraph);
+            builder.field(CENTROID_HNSW_M.getPreferredName(), centroidHnswM);
+            builder.field(CENTROID_HNSW_BEAM_WIDTH.getPreferredName(), centroidHnswBeamWidth);
+            builder.field(CENTROID_GRAPH_EF_SEARCH.getPreferredName(), centroidGraphEfSearch);
             builder.field(DIRECTORY_TYPE_FIELD.getPreferredName(), directoryType);
             return builder.endObject();
         }

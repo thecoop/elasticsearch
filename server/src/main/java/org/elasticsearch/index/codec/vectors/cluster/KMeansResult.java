@@ -24,6 +24,11 @@ public class KMeansResult<V> {
     private final int[] assignments;
     private int[] clusterCounts;
     private int[] soarAssignments;
+    // Per-centroid nearest-neighbour lists from the final clustering pass, or {@code null} if not computed.
+    // Reused (e.g. to bootstrap a centroid graph) to avoid recomputing centroid nearest neighbours. After
+    // empty-cluster removal this array may be longer than {@link #centroids}; only indices
+    // {@code [0, centroids.length)} are valid (see KMeansLocal#removeEmptyClusters).
+    private NeighborHood[] neighborhoods;
 
     private static final KMeansResult<float[]> FLOAT_EMPTY = new KMeansResult<>(new float[0][], new int[0], new int[0]) {
         @Override
@@ -96,6 +101,18 @@ public class KMeansResult<V> {
 
     public int[] soarAssignments() {
         return soarAssignments;
+    }
+
+    void setNeighborhoods(NeighborHood[] neighborhoods) {
+        this.neighborhoods = neighborhoods;
+    }
+
+    /**
+     * Per-centroid nearest-neighbour lists from the final clustering pass, or {@code null} if not
+     * computed. Only the first {@link #centroids()}{@code .length} entries are valid.
+     */
+    public NeighborHood[] neighborhoods() {
+        return neighborhoods;
     }
 
     /**

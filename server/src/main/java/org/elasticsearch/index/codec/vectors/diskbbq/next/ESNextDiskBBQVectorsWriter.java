@@ -42,6 +42,7 @@ import org.elasticsearch.index.codec.vectors.cluster.ClusteringFloatVectorValues
 import org.elasticsearch.index.codec.vectors.cluster.HierarchicalKMeans;
 import org.elasticsearch.index.codec.vectors.cluster.KMeansFloatVectorValues;
 import org.elasticsearch.index.codec.vectors.cluster.KMeansResult;
+import org.elasticsearch.index.codec.vectors.cluster.NeighborHood;
 import org.elasticsearch.index.codec.vectors.diskbbq.CentroidAssignments;
 import org.elasticsearch.index.codec.vectors.diskbbq.CentroidSlices;
 import org.elasticsearch.index.codec.vectors.diskbbq.CentroidSupplier;
@@ -50,6 +51,7 @@ import org.elasticsearch.index.codec.vectors.diskbbq.DocIdsWriter;
 import org.elasticsearch.index.codec.vectors.diskbbq.IVFVectorsWriter;
 import org.elasticsearch.index.codec.vectors.diskbbq.IntSorter;
 import org.elasticsearch.index.codec.vectors.diskbbq.IntToBooleanFunction;
+import org.elasticsearch.index.codec.vectors.diskbbq.PostingMetadata;
 import org.elasticsearch.index.codec.vectors.diskbbq.Preconditioner;
 import org.elasticsearch.index.codec.vectors.diskbbq.QuantizedVectorValues;
 import org.elasticsearch.index.codec.vectors.diskbbq.VectorPreconditioner;
@@ -90,6 +92,26 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     private final String sliceField;
     private final IvfFlushConfigSource flushConfigSource;
     private final IvfMergeConfigResolver mergeConfigResolver;
+    // Experiment-only: HNSW graph over the centroids (see ESNextDiskBBQVectorsFormat#indexCentroidsInGraph).
+    private final boolean indexCentroidsInGraph;
+    private final int centroidHnswM;
+    private final int centroidHnswBeamWidth;
+    private final int centroidGraphEfSearch;
+    // Per-field graph layout offsets (relative to the field's centroid region), captured during
+    // writeCentroids and consumed by doWriteMeta. Negative when no graph was written for the field.
+    private long graphFlatCentroidsOffset = -1;
+    private long graphPostingTableOffset = -1;
+    private long graphSerializedOffset = -1;
+    private long graphSerializedLength = -1;
+    // Number of nearest centroids to gather per centroid when bootstrapping the centroid graph from
+    // neighbourhoods; pruned down to centroidHnswM diverse links. Only used as a fallback when the
+    // clustering did not already compute neighbourhoods (small centroid counts).
+    private static final int CENTROID_GRAPH_NEIGHBOR_CANDIDATES = 64;
+    // Fixed seed for the centroid graph's HNSW level assignment, so builds are reproducible.
+    private static final long CENTROID_GRAPH_SEED = 42L;
+    // Neighbourhoods computed during the most recent calculateCentroids, reused to bootstrap the centroid
+    // graph without recomputing them. Set in calculateCentroids, consumed in writeCentroidsWithGraph.
+    private NeighborHood[] currentCentroidNeighborhoods = null;
 
     public ESNextDiskBBQVectorsWriter(
         SegmentWriteState state,
@@ -106,7 +128,11 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         int flatVectorThreshold,
         String sliceField,
         IvfFlushConfigSource flushConfigSource,
-        IvfMergeConfigResolver mergeConfigResolver
+        IvfMergeConfigResolver mergeConfigResolver,
+        boolean indexCentroidsInGraph,
+        int centroidHnswM,
+        int centroidHnswBeamWidth,
+        int centroidGraphEfSearch
     ) throws IOException {
         super(
             state,
@@ -131,6 +157,10 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         this.sliceField = sliceField;
         this.flushConfigSource = flushConfigSource != null ? flushConfigSource : IvfFlushConfigSource.empty();
         this.mergeConfigResolver = mergeConfigResolver != null ? mergeConfigResolver : IvfMergeConfigResolver.useCodecDefault();
+        this.indexCentroidsInGraph = indexCentroidsInGraph;
+        this.centroidHnswM = centroidHnswM;
+        this.centroidHnswBeamWidth = centroidHnswBeamWidth;
+        this.centroidGraphEfSearch = centroidGraphEfSearch;
         if (sliceField != null) {
             Sort sort = state.segmentInfo.getIndexSort();
             if (sort == null || sort.getSort().length == 0) {
@@ -669,6 +699,23 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             }
         }
         metaOutput.writeInt(Float.floatToIntBits(segmentConfig.rescoreOversample()));
+        // Experiment-only centroid HNSW graph metadata. Always written (the on-disk version was bumped
+        // to VERSION_CENTROID_GRAPH); a leading byte indicates whether a graph is present for the field.
+        if (graphSerializedOffset >= 0) {
+            metaOutput.writeByte((byte) 1);
+            metaOutput.writeVLong(graphFlatCentroidsOffset);
+            metaOutput.writeVLong(graphPostingTableOffset);
+            metaOutput.writeVLong(graphSerializedOffset);
+            metaOutput.writeVLong(graphSerializedLength);
+            metaOutput.writeInt(centroidGraphEfSearch);
+        } else {
+            metaOutput.writeByte((byte) 0);
+        }
+        // reset so the next field (which may be non-float and skip writeCentroids) starts clean
+        graphFlatCentroidsOffset = -1;
+        graphPostingTableOffset = -1;
+        graphSerializedOffset = -1;
+        graphSerializedLength = -1;
     }
 
     @Override
@@ -706,6 +753,12 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         CentroidOffsetAndLength centroidOffsetAndLength,
         IndexOutput centroidOutput
     ) throws IOException {
+        // reset per-field graph layout offsets; they remain negative (no graph) unless we write one below
+        graphFlatCentroidsOffset = -1;
+        graphPostingTableOffset = -1;
+        graphSerializedOffset = -1;
+        graphSerializedLength = -1;
+        final long fieldCentroidStart = centroidOutput.getFilePointer();
         CentroidSlices centroidSlices = centroidSupplier.slices();
         if (centroidSlices != null) {
             int numSlices = centroidSlices.sliceNumVectors().length;
@@ -716,6 +769,20 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
                 writer.add(centroidSlices.sliceNumVectors()[i]);
             }
             writer.finish();
+        }
+        if (indexCentroidsInGraph && centroidSupplier.size() > 0) {
+            // Experiment-only: a single flat HNSW graph over all centroids, bypassing the parent/child
+            // hierarchy. Query quantization at posting-visit time uses the global centroid (numParents == 0).
+            writeCentroidLookup(centroidOutput, centroidAssignments, IntUnaryOperator.identity(), centroidSupplier.size());
+            writeCentroidsWithGraph(
+                fieldInfo,
+                centroidSupplier,
+                globalCentroid,
+                centroidOffsetAndLength,
+                centroidOutput,
+                fieldCentroidStart
+            );
+            return;
         }
         if (centroidSupplier.secondLevelClusters().centroidsSupplier().size() > 1) {
             final CentroidGroups centroidGroups = buildCentroidGroups(centroidSupplier.secondLevelClusters());
@@ -843,6 +910,132 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         }
     }
 
+    /**
+     * Experiment-only: writes the centroids as flat 7-bit quantized records, builds an HNSW graph over
+     * them and serializes it. The byte offsets of each sub-region (relative to the field's centroid
+     * region start) are captured for {@link #doWriteMeta}.
+     */
+    private void writeCentroidsWithGraph(
+        FieldInfo fieldInfo,
+        CentroidSupplier centroidSupplier,
+        float[] globalCentroid,
+        CentroidOffsetAndLength centroidOffsetAndLength,
+        IndexOutput centroidOutput,
+        long fieldCentroidStart
+    ) throws IOException {
+        final int dimension = fieldInfo.getVectorDimension();
+        final int numCentroids = centroidSupplier.size();
+        final VectorSimilarityFunction similarityFunction = fieldInfo.getVectorSimilarityFunction();
+
+        // The posting lists are quantized relative to the second-level (parent) centroids whenever those
+        // exist (see buildAndWritePostingsLists). To keep the query quantization consistent with the
+        // postings, write those parent centroids + each fine centroid's parent ordinal so the posting
+        // visitor quantizes the query against the matching parent (rather than the global centroid).
+        final KMeansResult<float[]> secondLevel = centroidSupplier.secondLevelClusters();
+        final boolean hasParents = secondLevel.centroidsSupplier().size() > 1;
+        final int[] parentOf;
+        final float[][] parentCentroids;
+        final int numParents;
+        final int maxVectorsPerParent;
+        if (hasParents) {
+            final CentroidGroups groups = buildCentroidGroups(secondLevel);
+            parentCentroids = groups.centroids();
+            numParents = parentCentroids.length;
+            maxVectorsPerParent = groups.maxVectorsPerCentroidLength();
+            parentOf = new int[numCentroids];
+            final int[][] perParent = groups.vectors();
+            for (int p = 0; p < perParent.length; p++) {
+                for (int fineOrd : perParent[p]) {
+                    parentOf[fineOrd] = p;
+                }
+            }
+        } else {
+            parentOf = null;
+            parentCentroids = null;
+            numParents = 0;
+            maxVectorsPerParent = 0;
+        }
+        centroidOutput.writeVInt(numParents);
+        writeSlicesOffsets(centroidOutput, centroidSupplier.slices());
+        if (numParents > 0) {
+            // layout expected by the posting visitor's parent path: [VInt longestPostingList][raw parents]
+            centroidOutput.writeVInt(maxVectorsPerParent);
+            final ByteBuffer parentBuffer = ByteBuffer.allocate(dimension * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+            for (float[] parent : parentCentroids) {
+                parentBuffer.asFloatBuffer().put(parent);
+                centroidOutput.writeBytes(parentBuffer.array(), parentBuffer.array().length);
+            }
+        }
+
+        // Quantize all centroids to 7-bit OSQ against the global centroid into flat records (used for
+        // search-time scoring), and keep the raw centroids to bootstrap the graph from neighbourhoods.
+        final OptimizedScalarQuantizer osq = new OptimizedScalarQuantizer(similarityFunction);
+        final float[][] rawCentroids = new float[numCentroids][];
+        final ByteBuffersDataOutput flatBuffer = new ByteBuffersDataOutput();
+        final int[] quantizeScratch = new int[dimension];
+        final float[] residualScratch = new float[dimension];
+        final byte[] recordCorrections = new byte[3 * Float.BYTES + Integer.BYTES];
+        final ByteBuffer correctionsBuffer = ByteBuffer.wrap(recordCorrections).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < numCentroids; i++) {
+            float[] centroid = centroidSupplier.centroid(i);
+            rawCentroids[i] = centroid.clone();
+            OptimizedScalarQuantizer.QuantizationResult result = osq.scalarQuantize(
+                centroid,
+                residualScratch,
+                quantizeScratch,
+                (byte) 7,
+                globalCentroid
+            );
+            for (int d = 0; d < dimension; d++) {
+                flatBuffer.writeByte((byte) quantizeScratch[d]);
+            }
+            correctionsBuffer.clear();
+            correctionsBuffer.putFloat(result.lowerInterval());
+            correctionsBuffer.putFloat(result.upperInterval());
+            correctionsBuffer.putFloat(result.additionalCorrection());
+            correctionsBuffer.putInt(result.quantizedComponentSum());
+            flatBuffer.writeBytes(recordCorrections, 0, recordCorrections.length);
+        }
+
+        // persist: flat centroid records, then the posting offset/length table, then the graph
+        graphFlatCentroidsOffset = centroidOutput.getFilePointer() - fieldCentroidStart;
+        centroidOutput.copyBytes(flatBuffer.toDataInput(), flatBuffer.size());
+        graphPostingTableOffset = centroidOutput.getFilePointer() - fieldCentroidStart;
+        for (int i = 0; i < numCentroids; i++) {
+            centroidOutput.writeLong(centroidOffsetAndLength.offsets().get(i));
+            centroidOutput.writeLong(centroidOffsetAndLength.lengths().get(i));
+            // parent ordinal for query quantization at posting-visit time (NO_ORDINAL => global centroid)
+            centroidOutput.writeInt(numParents > 0 ? parentOf[i] : PostingMetadata.NO_ORDINAL);
+        }
+        graphSerializedOffset = centroidOutput.getFilePointer() - fieldCentroidStart;
+        // Build a multi-level navigable graph over the centroids by diversity-pruning their nearest
+        // neighbours (no per-node graph search). We reuse the neighbourhoods the clustering already computed
+        // (now correctly remapped through empty-cluster removal) for level 0, and only recompute them in the
+        // fallback case where clustering did not compute them (small centroid counts). Upper levels give the
+        // logarithmic navigation that a flat graph lacks once there are many centroids.
+        final NeighborHood[] threaded = currentCentroidNeighborhoods;
+        currentCentroidNeighborhoods = null;
+        final NeighborHood[] neighborhoods;
+        if (numCentroids <= 1) {
+            neighborhoods = null; // buildMultiLevelFromNeighborhoods handles the trivial graph
+        } else if (threaded != null && threaded.length >= numCentroids) {
+            neighborhoods = threaded; // reuse clustering's neighbourhoods, no recomputation
+        } else {
+            final int neighborCandidates = Math.min(numCentroids - 1, CENTROID_GRAPH_NEIGHBOR_CANDIDATES);
+            neighborhoods = mergeExec != null
+                ? NeighborHood.computeNeighborhoods(mergeExec, numMergeWorkers, rawCentroids, neighborCandidates)
+                : NeighborHood.computeNeighborhoods(rawCentroids, neighborCandidates);
+        }
+        final CentroidGraphIO.MultiLevelAdjacency graph = CentroidGraphIO.buildMultiLevelFromNeighborhoods(
+            neighborhoods,
+            rawCentroids,
+            centroidHnswM,
+            CENTROID_GRAPH_SEED
+        );
+        CentroidGraphIO.writeMultiLevelGraph(centroidOutput, graph);
+        graphSerializedLength = centroidOutput.getFilePointer() - fieldCentroidStart - graphSerializedOffset;
+    }
+
     private KMeansResult<float[]> buildSecondLevelClusters(
         FieldInfo fieldInfo,
         ClusteringFloatVectorValues floatVectorValues,
@@ -900,6 +1093,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         // TODO: consider hinting / bootstrapping hierarchical kmeans with the prior segments centroids
         // TODO: for flush we are doing this over the vectors and here centroids which seems duplicative
         // preliminary tests suggest recall is good using only centroids but need to do further evaluation
+        currentCentroidNeighborhoods = null;
         HierarchicalKMeans<float[]> hierarchicalKMeans;
         if (mergeExec != null) {
             hierarchicalKMeans = HierarchicalKMeans.ofConcurrent(
@@ -913,6 +1107,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         }
         if (sliceField == null) { // no slice
             KMeansResult<float[]> kMeansResult = calculateCentroids(hierarchicalKMeans, floatVectorValues);
+            currentCentroidNeighborhoods = kMeansResult.neighborhoods();
             if (logger.isDebugEnabled()) {
                 logger.debug("final centroid count: {}", kMeansResult.centroids().length);
             }
@@ -1044,12 +1239,14 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
      */
     @Override
     public CentroidAssignments calculateCentroids(FieldInfo fieldInfo, KMeansFloatVectorValues floatVectorValues) throws IOException {
+        currentCentroidNeighborhoods = null;
         if (sliceField != null) {
             // for sliced indexed, we don't cluster the data during flush so we can search our vectors by docId range
             return buildFlatCentroidAssignments(fieldInfo, floatVectorValues);
         }
         HierarchicalKMeans<float[]> hierarchicalKMeans = HierarchicalKMeans.ofSerial(CentroidOps.FLOAT, floatVectorValues.dimension());
         KMeansResult<float[]> kMeansResult = calculateCentroids(hierarchicalKMeans, floatVectorValues);
+        currentCentroidNeighborhoods = kMeansResult.neighborhoods();
         if (logger.isDebugEnabled()) {
             logger.debug("final centroid count: {}", kMeansResult.centroids().length);
         }

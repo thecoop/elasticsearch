@@ -19,10 +19,15 @@ import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.ConjunctionUtils;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.KnnCollector;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TopKnnCollector;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LongValues;
+import org.apache.lucene.util.hnsw.HnswGraph;
+import org.apache.lucene.util.hnsw.HnswGraphSearcher;
+import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.packed.DirectReader;
 import org.apache.lucene.util.packed.DirectWriter;
 import org.elasticsearch.index.codec.vectors.GenericFlatVectorReaders;
@@ -144,6 +149,21 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         for (int i = 0; i < quantized.length; i++) {
             quantized[i] = (byte) scratch[i];
         }
+        // Experiment-only: when a centroid HNSW graph is present, select centroids via graph search
+        // instead of the brute-force scan. Query quantization for posting visits stays global (numParents == 0).
+        if (fieldEntry.hasCentroidGraph) {
+            CentroidIterator graphIterator = getCentroidIteratorGraph(
+                fieldInfo,
+                fieldEntry,
+                centroids,
+                numCentroids,
+                quantized,
+                queryParams,
+                acceptCentroids,
+                visitRatio
+            );
+            return getPostingListPrefetchIterator(graphIterator, postingListSlice);
+        }
         final ES92Int7VectorsScorer scorer = ESVectorUtil.getES92Int7VectorsScorer(centroids, fieldInfo.getVectorDimension(), bulkSize);
         // build iterator
         CentroidIterator centroidIterator;
@@ -181,6 +201,74 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             );
         }
         return getPostingListPrefetchIterator(centroidIterator, postingListSlice);
+    }
+
+    /**
+     * Experiment-only centroid selection backed by an HNSW graph over the centroids. Collects the top
+     * centroids via {@link HnswGraphSearcher} (using the same int7 scoring as the brute-force path) and
+     * iterates them in descending score order, reading each centroid's posting offset/length from the
+     * inline posting table.
+     */
+    private static CentroidIterator getCentroidIteratorGraph(
+        FieldInfo fieldInfo,
+        NextFieldEntry fieldEntry,
+        IndexInput centroids,
+        int numCentroids,
+        byte[] quantizedQuery,
+        OptimizedScalarQuantizer.QuantizationResult queryParams,
+        FixedBitSet acceptCentroids,
+        float visitRatio
+    ) throws IOException {
+        final int dimension = fieldInfo.getVectorDimension();
+        final int recordSize = CentroidGraphIO.flatRecordSize(dimension);
+        final IndexInput flatCentroids = centroids.slice(
+            "centroid-graph-flat",
+            fieldEntry.graphFlatCentroidsOffset,
+            (long) numCentroids * recordSize
+        );
+        final IndexInput graphSlice = centroids.slice("centroid-graph", fieldEntry.graphSerializedOffset, fieldEntry.graphSerializedLength);
+        final HnswGraph graph = CentroidGraphIO.readGraph(graphSlice);
+        final RandomVectorScorer scorer = CentroidGraphIO.searchScorer(
+            flatCentroids,
+            numCentroids,
+            dimension,
+            fieldInfo.getVectorSimilarityFunction(),
+            fieldEntry.globalCentroidDp(),
+            quantizedQuery,
+            queryParams
+        );
+        // Number of centroids the posting loop may visit, derived from the visit ratio (the outer loop
+        // accounts for ~2x via soar). centroidGraphEfSearch, when set, raises the graph search beam for
+        // better navigation but must not lower the collected count below this budget, or the posting loop
+        // would be starved.
+        final int budget = Math.max(1, Math.min(numCentroids, (int) Math.ceil(2.0 * visitRatio * numCentroids)));
+        final int k = fieldEntry.centroidGraphEfSearch > 0
+            ? Math.min(numCentroids, Math.max(budget, fieldEntry.centroidGraphEfSearch))
+            : budget;
+        final TopKnnCollector collector = new TopKnnCollector(k, Integer.MAX_VALUE);
+        HnswGraphSearcher.search(scorer, collector, graph, acceptCentroids);
+        final ScoreDoc[] scoreDocs = collector.topDocs().scoreDocs;
+        final long postingTableOffset = fieldEntry.graphPostingTableOffset;
+        return new CentroidIterator() {
+            private int index = 0;
+
+            @Override
+            public boolean hasNext() {
+                return index < scoreDocs.length;
+            }
+
+            @Override
+            public PostingMetadata nextPosting() throws IOException {
+                final ScoreDoc scoreDoc = scoreDocs[index++];
+                // each entry is [offset(long)][length(long)][parentOrd(int)]; parentOrd drives per-parent
+                // query quantization (NO_ORDINAL => quantize against the global centroid)
+                centroids.seek(postingTableOffset + (2L * Long.BYTES + Integer.BYTES) * scoreDoc.doc);
+                final long postingListOffset = centroids.readLong();
+                final long postingListLength = centroids.readLong();
+                final int parentOrdinal = centroids.readInt();
+                return new PostingMetadata(postingListOffset, postingListLength, parentOrdinal, scoreDoc.score);
+            }
+        };
     }
 
     private FixedBitSet getCentroidFilter(
@@ -285,6 +373,23 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             maxSliceSize = input.readVInt();
         }
         float rescoreOversample = Float.intBitsToFloat(input.readInt());
+        // Experiment-only centroid HNSW graph metadata (present from VERSION_CENTROID_GRAPH onwards).
+        boolean hasCentroidGraph = false;
+        long graphFlatCentroidsOffset = -1;
+        long graphPostingTableOffset = -1;
+        long graphSerializedOffset = -1;
+        long graphSerializedLength = -1;
+        int centroidGraphEfSearch = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_GRAPH_EF_SEARCH;
+        if (versionMeta >= ESNextDiskBBQVectorsFormat.VERSION_CENTROID_GRAPH) {
+            if (input.readByte() == 1) {
+                hasCentroidGraph = true;
+                graphFlatCentroidsOffset = input.readVLong();
+                graphPostingTableOffset = input.readVLong();
+                graphSerializedOffset = input.readVLong();
+                graphSerializedLength = input.readVLong();
+                centroidGraphEfSearch = input.readInt();
+            }
+        }
         return new NextFieldEntry(
             rawVectorFormat,
             useDirectIOReads,
@@ -303,7 +408,13 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             preconditionerLength,
             numSlices,
             maxSliceSize,
-            rescoreOversample
+            rescoreOversample,
+            hasCentroidGraph,
+            graphFlatCentroidsOffset,
+            graphPostingTableOffset,
+            graphSerializedOffset,
+            graphSerializedLength,
+            centroidGraphEfSearch
         );
     }
 
@@ -336,6 +447,13 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         final int numSlices;
         final int maxSliceSize;
         private final float rescoreOversample;
+        // Experiment-only centroid HNSW graph layout (offsets relative to the field's centroid region).
+        final boolean hasCentroidGraph;
+        final long graphFlatCentroidsOffset;
+        final long graphPostingTableOffset;
+        final long graphSerializedOffset;
+        final long graphSerializedLength;
+        final int centroidGraphEfSearch;
 
         NextFieldEntry(
             String rawVectorFormat,
@@ -355,7 +473,13 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             long preconditionerLength,
             int numSlices,
             int maxSliceSize,
-            float rescoreOversample
+            float rescoreOversample,
+            boolean hasCentroidGraph,
+            long graphFlatCentroidsOffset,
+            long graphPostingTableOffset,
+            long graphSerializedOffset,
+            long graphSerializedLength,
+            int centroidGraphEfSearch
         ) {
             super(
                 rawVectorFormat,
@@ -377,6 +501,12 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             this.numSlices = numSlices;
             this.maxSliceSize = maxSliceSize;
             this.rescoreOversample = rescoreOversample;
+            this.hasCentroidGraph = hasCentroidGraph;
+            this.graphFlatCentroidsOffset = graphFlatCentroidsOffset;
+            this.graphPostingTableOffset = graphPostingTableOffset;
+            this.graphSerializedOffset = graphSerializedOffset;
+            this.graphSerializedLength = graphSerializedLength;
+            this.centroidGraphEfSearch = centroidGraphEfSearch;
         }
 
         public ESNextDiskBBQVectorsFormat.QuantEncoding quantEncoding() {

@@ -186,6 +186,9 @@ public class KnnIndexTester {
                 if (args.queryQuantizeBits() != null && args.queryQuantizeBits() != defaultQueryQuantizeBits(args.quantizeBits())) {
                     suffix.add("q" + args.queryQuantizeBits());
                 }
+                if (args.indexCentroidsInGraph()) {
+                    suffix.add("cgraph" + args.centroidHnswM() + "x" + args.centroidHnswBeamWidth());
+                }
             }
             case HNSW -> {
                 suffix.add(Integer.toString(args.hnswM()));
@@ -223,7 +226,13 @@ public class KnnIndexTester {
                     args.doPrecondition(),
                     args.preconditioningBlockDims(),
                     flatVectorThreshold,
-                    args.datasetConfig().isSliced() ? KnnIndexer.PARTITION_ID_FIELD : null
+                    args.datasetConfig().isSliced() ? KnnIndexer.PARTITION_ID_FIELD : null,
+                    null,
+                    null,
+                    args.indexCentroidsInGraph(),
+                    args.centroidHnswM(),
+                    args.centroidHnswBeamWidth(),
+                    args.centroidGraphEfSearch()
                 );
             }
             case GPU_HNSW -> switch (quantizeBits) {
@@ -306,7 +315,7 @@ public class KnnIndexTester {
     private static ParsedArgs parseArgs(String[] args) {
         boolean help = false;
         String configFile = null;
-        int warmUpIterations = 1;
+        int warmUpIterations = 3;
 
         if (args.length > 2) {
             return null; // invalid options

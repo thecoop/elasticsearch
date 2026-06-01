@@ -59,7 +59,9 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
 
     public static final int VERSION_START = 1;
     public static final int VERSION_DIRECT_IO = VERSION_START;
-    public static final int VERSION_CURRENT = VERSION_START;
+    // adds an optional, experiment-only HNSW graph over the centroids (see indexCentroidsInGraph)
+    public static final int VERSION_CENTROID_GRAPH = 2;
+    public static final int VERSION_CURRENT = VERSION_CENTROID_GRAPH;
     public static final float DYNAMIC_VISIT_RATIO = 0.0f;
 
     private static final DirectIOCapableFlatVectorsFormat float32VectorFormat = new DirectIOCapableLucene99FlatVectorsFormat(
@@ -96,6 +98,13 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
     public static final int MIN_PRECONDITIONING_BLOCK_DIMS = 8;
     public static final int MAX_PRECONDITIONING_BLOCK_DIMS = 384;
     public static final int MAX_DIMENSIONS = 4096;
+
+    // Experiment-only defaults for the optional HNSW graph over the centroids. These are NOT
+    // user configurable and are only wired through KnnIndexTester for benchmarking.
+    public static final int DEFAULT_CENTROID_HNSW_M = 16;
+    public static final int DEFAULT_CENTROID_HNSW_BEAM_WIDTH = 100;
+    // -1 means "derive the number of centroids to collect from the visit ratio at search time"
+    public static final int DEFAULT_CENTROID_GRAPH_EF_SEARCH = -1;
 
     public enum QuantEncoding {
         ONE_BIT_4BIT_QUERY(0, (byte) 1, (byte) 4) {
@@ -346,6 +355,12 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
     private final String sliceField;
     private final IvfFlushConfigSource ivfFlushConfigSource;
     private final IvfMergeConfigResolver ivfMergeConfigResolver;
+    // Experiment-only: when true, an HNSW graph is built over the centroids and used for centroid
+    // selection at search time instead of the brute-force scan. Never enabled in production paths.
+    private final boolean indexCentroidsInGraph;
+    private final int centroidHnswM;
+    private final int centroidHnswBeamWidth;
+    private final int centroidGraphEfSearch;
 
     public ESNextDiskBBQVectorsFormat(int vectorPerCluster, int centroidsPerParentCluster, String sliceField) {
         this(QuantEncoding.ONE_BIT_4BIT_QUERY, vectorPerCluster, centroidsPerParentCluster, sliceField);
@@ -443,6 +458,55 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
         IvfFlushConfigSource ivfFlushConfigSource,
         IvfMergeConfigResolver ivfMergeConfigResolver
     ) {
+        this(
+            quantEncoding,
+            vectorPerCluster,
+            centroidsPerParentCluster,
+            elementType,
+            useDirectIO,
+            mergingExecutorService,
+            maxMergingWorkers,
+            doPrecondition,
+            preconditioningBlockDimension,
+            flatVectorThreshold,
+            sliceField,
+            ivfFlushConfigSource,
+            ivfMergeConfigResolver,
+            false,
+            DEFAULT_CENTROID_HNSW_M,
+            DEFAULT_CENTROID_HNSW_BEAM_WIDTH,
+            DEFAULT_CENTROID_GRAPH_EF_SEARCH
+        );
+    }
+
+    /**
+     * Experiment-only constructor that can enable an HNSW graph over the centroids. This is NOT
+     * reachable from user/mapper configuration; it is only used by {@code KnnIndexTester}.
+     *
+     * @param indexCentroidsInGraph when {@code true}, build and search an HNSW graph over the centroids
+     * @param centroidHnswM the HNSW {@code M} (max connections) used when building the centroid graph
+     * @param centroidHnswBeamWidth the HNSW beam width (efConstruction) used when building the centroid graph
+     * @param centroidGraphEfSearch the number of centroids to collect at search time, or {@code -1} to derive from the visit ratio
+     */
+    public ESNextDiskBBQVectorsFormat(
+        QuantEncoding quantEncoding,
+        int vectorPerCluster,
+        int centroidsPerParentCluster,
+        DenseVectorFieldMapper.ElementType elementType,
+        boolean useDirectIO,
+        ExecutorService mergingExecutorService,
+        int maxMergingWorkers,
+        boolean doPrecondition,
+        int preconditioningBlockDimension,
+        int flatVectorThreshold,
+        String sliceField,
+        IvfFlushConfigSource ivfFlushConfigSource,
+        IvfMergeConfigResolver ivfMergeConfigResolver,
+        boolean indexCentroidsInGraph,
+        int centroidHnswM,
+        int centroidHnswBeamWidth,
+        int centroidGraphEfSearch
+    ) {
         super(NAME);
         if (vectorPerCluster < MIN_VECTORS_PER_CLUSTER || vectorPerCluster > MAX_VECTORS_PER_CLUSTER) {
             throw new IllegalArgumentException(
@@ -498,6 +562,18 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
         this.sliceField = sliceField;
         this.ivfFlushConfigSource = ivfFlushConfigSource;
         this.ivfMergeConfigResolver = ivfMergeConfigResolver;
+        if (indexCentroidsInGraph && (centroidHnswM <= 0 || centroidHnswBeamWidth <= 0)) {
+            throw new IllegalArgumentException(
+                "centroidHnswM and centroidHnswBeamWidth must be > 0 when indexCentroidsInGraph is enabled, got M="
+                    + centroidHnswM
+                    + ", beamWidth="
+                    + centroidHnswBeamWidth
+            );
+        }
+        this.indexCentroidsInGraph = indexCentroidsInGraph;
+        this.centroidHnswM = centroidHnswM;
+        this.centroidHnswBeamWidth = centroidHnswBeamWidth;
+        this.centroidGraphEfSearch = centroidGraphEfSearch;
     }
 
     /** Constructs a format using the given graph construction parameters and scalar quantization. */
@@ -522,7 +598,11 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
             flatVectorThreshold,
             sliceField,
             ivfFlushConfigSource,
-            ivfMergeConfigResolver
+            ivfMergeConfigResolver,
+            indexCentroidsInGraph,
+            centroidHnswM,
+            centroidHnswBeamWidth,
+            centroidGraphEfSearch
         );
     }
 
