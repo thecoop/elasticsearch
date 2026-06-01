@@ -97,6 +97,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     private final int centroidHnswM;
     private final int centroidHnswBeamWidth;
     private final int centroidGraphEfSearch;
+    private final SpannOverspill.Params spannParams;
     // Per-field graph layout offsets (relative to the field's centroid region), captured during
     // writeCentroids and consumed by doWriteMeta. Negative when no graph was written for the field.
     private long graphFlatCentroidsOffset = -1;
@@ -112,6 +113,10 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     // Neighbourhoods computed during the most recent calculateCentroids, reused to bootstrap the centroid
     // graph without recomputing them. Set in calculateCentroids, consumed in writeCentroidsWithGraph.
     private NeighborHood[] currentCentroidNeighborhoods = null;
+    // SPANN multi-replica overspill assignments for the current field (centroid ords + sq distances per
+    // vector), set during calculateCentroids and consumed by buildAndWritePostingsLists. Null unless enabled.
+    private int[][] currentReplicas = null;
+    private float[][] currentReplicaDists = null;
 
     public ESNextDiskBBQVectorsWriter(
         SegmentWriteState state,
@@ -132,7 +137,8 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         boolean indexCentroidsInGraph,
         int centroidHnswM,
         int centroidHnswBeamWidth,
-        int centroidGraphEfSearch
+        int centroidGraphEfSearch,
+        SpannOverspill.Params spannParams
     ) throws IOException {
         super(
             state,
@@ -161,6 +167,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         this.centroidHnswM = centroidHnswM;
         this.centroidHnswBeamWidth = centroidHnswBeamWidth;
         this.centroidGraphEfSearch = centroidGraphEfSearch;
+        this.spannParams = spannParams == null ? SpannOverspill.Params.DISABLED : spannParams;
         if (sliceField != null) {
             Sort sort = state.segmentInfo.getIndexSort();
             if (sort == null || sort.getSort().length == 0) {
@@ -313,29 +320,37 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     ) throws IOException {
         final IvfSegmentConfig segmentConfig = requireSegmentConfig(fieldWritingContext);
         final ESNextDiskBBQVectorsFormat.QuantEncoding effectiveQuantEncoding = segmentConfig.quantEncoding();
-        KMeansResult<float[]> centroidClusters = centroidSupplier.secondLevelClusters();
-        int[] centroidVectorCount = new int[centroidSupplier.size()];
+        final int[][] assignmentsByCluster = currentReplicas != null
+            ? buildReplicaMembership(centroidSupplier.size())
+            : buildSoarMembership(centroidSupplier.size(), assignments, overspillAssignments);
+        return writePostingsOnHeap(
+            fieldInfo,
+            centroidSupplier,
+            floatVectorValues,
+            postingsOutput,
+            fileOffset,
+            assignmentsByCluster,
+            effectiveQuantEncoding
+        );
+    }
+
+    /** Builds per-cluster membership from primary + single-SOAR overspill assignments. */
+    private static int[][] buildSoarMembership(int numCentroids, int[] assignments, int[] overspillAssignments) {
+        final int[] centroidVectorCount = new int[numCentroids];
         for (int i = 0; i < assignments.length; i++) {
             centroidVectorCount[assignments[i]]++;
-            // if soar assignments are present, count them as well
             if (overspillAssignments.length > i && overspillAssignments[i] != NO_SOAR_ASSIGNMENT) {
                 centroidVectorCount[overspillAssignments[i]]++;
             }
         }
-
-        int maxPostingListSize = 0;
-        int[][] assignmentsByCluster = new int[centroidSupplier.size()][];
-        for (int c = 0; c < centroidSupplier.size(); c++) {
-            int size = centroidVectorCount[c];
-            maxPostingListSize = Math.max(maxPostingListSize, size);
-            assignmentsByCluster[c] = new int[size];
+        final int[][] assignmentsByCluster = new int[numCentroids][];
+        for (int c = 0; c < numCentroids; c++) {
+            assignmentsByCluster[c] = new int[centroidVectorCount[c]];
         }
         Arrays.fill(centroidVectorCount, 0);
-
         for (int i = 0; i < assignments.length; i++) {
             int c = assignments[i];
             assignmentsByCluster[c][centroidVectorCount[c]++] = i;
-            // if soar assignments are present, add them to the cluster as well
             if (overspillAssignments.length > i) {
                 int s = overspillAssignments[i];
                 if (s != NO_SOAR_ASSIGNMENT) {
@@ -343,7 +358,27 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
                 }
             }
         }
-        // write the posting lists
+        return assignmentsByCluster;
+    }
+
+    /**
+     * Writes posting lists, quantizing each vector against its cluster centroid on the fly. Used for the
+     * flush path and (in SPANN/graph mode) the merge path, where the merged vectors are randomly accessible.
+     */
+    private CentroidOffsetAndLength writePostingsOnHeap(
+        FieldInfo fieldInfo,
+        CentroidSupplier centroidSupplier,
+        FloatVectorValues floatVectorValues,
+        IndexOutput postingsOutput,
+        long fileOffset,
+        int[][] assignmentsByCluster,
+        ESNextDiskBBQVectorsFormat.QuantEncoding effectiveQuantEncoding
+    ) throws IOException {
+        final KMeansResult<float[]> centroidClusters = centroidSupplier.secondLevelClusters();
+        int maxPostingListSize = 0;
+        for (int[] cluster : assignmentsByCluster) {
+            maxPostingListSize = Math.max(maxPostingListSize, cluster.length);
+        }
         final PackedLongValues.Builder offsets = PackedLongValues.monotonicBuilder(PackedInts.COMPACT);
         final PackedLongValues.Builder lengths = PackedLongValues.monotonicBuilder(PackedInts.COMPACT);
         DiskBBQBulkWriter bulkWriter = DiskBBQBulkWriter.fromBitSize(effectiveQuantEncoding.bits(), BULK_SIZE, postingsOutput, true, true);
@@ -416,6 +451,20 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     ) throws IOException {
         final IvfSegmentConfig segmentConfig = requireSegmentConfig(fieldWritingContext);
         final ESNextDiskBBQVectorsFormat.QuantEncoding effectiveQuantEncoding = segmentConfig.quantEncoding();
+        if (currentReplicas != null) {
+            // SPANN overspill: vectors are randomly accessible via the merged temp file, so quantize on the
+            // fly (per cluster) like the flush path instead of the 2-slot pre-quantized layout.
+            final int[][] assignmentsByCluster = buildReplicaMembership(centroidSupplier.size());
+            return writePostingsOnHeap(
+                fieldInfo,
+                centroidSupplier,
+                floatVectorValues,
+                postingsOutput,
+                fileOffset,
+                assignmentsByCluster,
+                effectiveQuantEncoding
+            );
+        }
         // first, quantize all the vectors into a temporary file
         var vectorSimilarityFunction = fieldInfo.getVectorSimilarityFunction();
         KMeansResult<float[]> centroidClusters = centroidSupplier.secondLevelClusters();
@@ -1094,6 +1143,8 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         // TODO: for flush we are doing this over the vectors and here centroids which seems duplicative
         // preliminary tests suggest recall is good using only centroids but need to do further evaluation
         currentCentroidNeighborhoods = null;
+        currentReplicas = null;
+        currentReplicaDists = null;
         HierarchicalKMeans<float[]> hierarchicalKMeans;
         if (mergeExec != null) {
             hierarchicalKMeans = HierarchicalKMeans.ofConcurrent(
@@ -1108,6 +1159,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         if (sliceField == null) { // no slice
             KMeansResult<float[]> kMeansResult = calculateCentroids(hierarchicalKMeans, floatVectorValues);
             currentCentroidNeighborhoods = kMeansResult.neighborhoods();
+            computeReplicas(kMeansResult, floatVectorValues);
             if (logger.isDebugEnabled()) {
                 logger.debug("final centroid count: {}", kMeansResult.centroids().length);
             }
@@ -1240,6 +1292,8 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
     @Override
     public CentroidAssignments calculateCentroids(FieldInfo fieldInfo, KMeansFloatVectorValues floatVectorValues) throws IOException {
         currentCentroidNeighborhoods = null;
+        currentReplicas = null;
+        currentReplicaDists = null;
         if (sliceField != null) {
             // for sliced indexed, we don't cluster the data during flush so we can search our vectors by docId range
             return buildFlatCentroidAssignments(fieldInfo, floatVectorValues);
@@ -1247,6 +1301,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         HierarchicalKMeans<float[]> hierarchicalKMeans = HierarchicalKMeans.ofSerial(CentroidOps.FLOAT, floatVectorValues.dimension());
         KMeansResult<float[]> kMeansResult = calculateCentroids(hierarchicalKMeans, floatVectorValues);
         currentCentroidNeighborhoods = kMeansResult.neighborhoods();
+        computeReplicas(kMeansResult, floatVectorValues);
         if (logger.isDebugEnabled()) {
             logger.debug("final centroid count: {}", kMeansResult.centroids().length);
         }
@@ -1263,6 +1318,89 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         ClusteringFloatVectorValues floatVectorValues
     ) throws IOException {
         return hierarchicalKMeans.cluster(floatVectorValues, vectorPerCluster);
+    }
+
+    /**
+     * Experiment-only: when the centroid graph and SPANN overspill are enabled, assign each vector to up to
+     * {@code replicaCount} centroids via centroid-graph search + RNG diversity, stashing the result for
+     * {@link #buildAndWritePostingsLists} to write (and trim). Otherwise leaves the replicas unset so the
+     * default single-SOAR overspill is used.
+     */
+    private void computeReplicas(KMeansResult<float[]> kMeansResult, FloatVectorValues vectors) throws IOException {
+        if (indexCentroidsInGraph == false || spannParams.enabled() == false || kMeansResult.centroids().length <= 1) {
+            return;
+        }
+        final SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            vectors,
+            kMeansResult.centroids(),
+            kMeansResult.assignments(),
+            spannParams.replicaCount(),
+            spannParams.internalResultNum(),
+            spannParams.rngFactor(),
+            spannParams.closureEpsilon(),
+            centroidHnswM,
+            centroidHnswBeamWidth
+        );
+        currentReplicas = replicas.centroidsPerVector();
+        currentReplicaDists = replicas.sqDistPerVector();
+    }
+
+    /**
+     * Builds per-cluster membership from the SPANN replica assignments, trimming postings that exceed
+     * {@code maxPostingFactor * vectorPerCluster} by keeping the nearest members (SPANN posting cut).
+     * Returns the vector ords per cluster; the on-the-fly quantizer re-quantizes each vector against its
+     * cluster centroid, so no per-replica slot bookkeeping is needed. Clears the stashed replicas.
+     */
+    private int[][] buildReplicaMembership(int numCentroids) {
+        final int[][] replicas = currentReplicas;
+        final float[][] dists = currentReplicaDists;
+        currentReplicas = null;
+        currentReplicaDists = null;
+        final int[] counts = new int[numCentroids];
+        for (int[] perVector : replicas) {
+            for (int centroid : perVector) {
+                counts[centroid]++;
+            }
+        }
+        final int[][] memberOrds = new int[numCentroids][];
+        final float[][] memberDists = new float[numCentroids][];
+        for (int c = 0; c < numCentroids; c++) {
+            memberOrds[c] = new int[counts[c]];
+            memberDists[c] = new float[counts[c]];
+        }
+        final int[] fill = new int[numCentroids];
+        for (int v = 0; v < replicas.length; v++) {
+            final int[] perVector = replicas[v];
+            for (int r = 0; r < perVector.length; r++) {
+                final int c = perVector[r];
+                memberOrds[c][fill[c]] = v;
+                memberDists[c][fill[c]] = dists[v][r];
+                fill[c]++;
+            }
+        }
+        final int trimCap = spannParams.maxPostingFactor() > 0
+            ? Math.max(1, (int) (spannParams.maxPostingFactor() * vectorPerCluster))
+            : Integer.MAX_VALUE;
+        final int[][] membership = new int[numCentroids][];
+        for (int c = 0; c < numCentroids; c++) {
+            if (memberOrds[c].length <= trimCap) {
+                membership[c] = memberOrds[c];
+            } else {
+                // keep the trimCap nearest members (primaries, being nearest, survive)
+                final Integer[] order = new Integer[memberOrds[c].length];
+                for (int i = 0; i < order.length; i++) {
+                    order[i] = i;
+                }
+                final float[] d = memberDists[c];
+                Arrays.sort(order, (a, b) -> Float.compare(d[a], d[b]));
+                final int[] kept = new int[trimCap];
+                for (int i = 0; i < trimCap; i++) {
+                    kept[i] = memberOrds[c][order[i]];
+                }
+                membership[c] = kept;
+            }
+        }
+        return membership;
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)

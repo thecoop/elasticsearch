@@ -361,6 +361,7 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
     private final int centroidHnswM;
     private final int centroidHnswBeamWidth;
     private final int centroidGraphEfSearch;
+    private final SpannOverspill.Params spannParams;
 
     public ESNextDiskBBQVectorsFormat(int vectorPerCluster, int centroidsPerParentCluster, String sliceField) {
         this(QuantEncoding.ONE_BIT_4BIT_QUERY, vectorPerCluster, centroidsPerParentCluster, sliceField);
@@ -475,7 +476,8 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
             false,
             DEFAULT_CENTROID_HNSW_M,
             DEFAULT_CENTROID_HNSW_BEAM_WIDTH,
-            DEFAULT_CENTROID_GRAPH_EF_SEARCH
+            DEFAULT_CENTROID_GRAPH_EF_SEARCH,
+            SpannOverspill.Params.DISABLED
         );
     }
 
@@ -505,7 +507,8 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
         boolean indexCentroidsInGraph,
         int centroidHnswM,
         int centroidHnswBeamWidth,
-        int centroidGraphEfSearch
+        int centroidGraphEfSearch,
+        SpannOverspill.Params spannParams
     ) {
         super(NAME);
         if (vectorPerCluster < MIN_VECTORS_PER_CLUSTER || vectorPerCluster > MAX_VECTORS_PER_CLUSTER) {
@@ -570,6 +573,7 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
                     + centroidHnswBeamWidth
             );
         }
+        this.spannParams = spannParams == null ? SpannOverspill.Params.DISABLED : spannParams;
         this.indexCentroidsInGraph = indexCentroidsInGraph;
         this.centroidHnswM = centroidHnswM;
         this.centroidHnswBeamWidth = centroidHnswBeamWidth;
@@ -602,7 +606,8 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
             indexCentroidsInGraph,
             centroidHnswM,
             centroidHnswBeamWidth,
-            centroidGraphEfSearch
+            centroidGraphEfSearch,
+            spannParams
         );
     }
 

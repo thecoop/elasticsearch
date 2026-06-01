@@ -84,6 +84,12 @@ public record TestConfiguration(
     int centroidHnswM,
     int centroidHnswBeamWidth,
     int centroidGraphEfSearch,
+    // SPANN multi-replica overspill knobs (only used when indexCentroidsInGraph and replicaCount > 1)
+    int replicaCount,
+    int internalResultNum,
+    float rngFactor,
+    float closureEpsilon,
+    float maxPostingFactor,
     String directoryType,
     DatasetConfig datasetConfig
 ) {
@@ -131,6 +137,11 @@ public record TestConfiguration(
     static final ParseField CENTROID_HNSW_M = new ParseField("centroid_hnsw_m");
     static final ParseField CENTROID_HNSW_BEAM_WIDTH = new ParseField("centroid_hnsw_beam_width");
     static final ParseField CENTROID_GRAPH_EF_SEARCH = new ParseField("centroid_graph_ef_search");
+    static final ParseField REPLICA_COUNT = new ParseField("replica_count");
+    static final ParseField INTERNAL_RESULT_NUM = new ParseField("internal_result_num");
+    static final ParseField RNG_FACTOR = new ParseField("rng_factor");
+    static final ParseField CLOSURE_EPSILON = new ParseField("closure_epsilon");
+    static final ParseField MAX_POSTING_FACTOR = new ParseField("max_posting_factor");
     static final ParseField DIRECTORY_TYPE_FIELD = new ParseField("directory_type");
 
     /** By default, in ES the default writer buffer size is 10% of the heap space
@@ -206,6 +217,11 @@ public record TestConfiguration(
         PARSER.declareInt(Builder::setCentroidHnswM, CENTROID_HNSW_M);
         PARSER.declareInt(Builder::setCentroidHnswBeamWidth, CENTROID_HNSW_BEAM_WIDTH);
         PARSER.declareInt(Builder::setCentroidGraphEfSearch, CENTROID_GRAPH_EF_SEARCH);
+        PARSER.declareInt(Builder::setReplicaCount, REPLICA_COUNT);
+        PARSER.declareInt(Builder::setInternalResultNum, INTERNAL_RESULT_NUM);
+        PARSER.declareFloat(Builder::setRngFactor, RNG_FACTOR);
+        PARSER.declareFloat(Builder::setClosureEpsilon, CLOSURE_EPSILON);
+        PARSER.declareFloat(Builder::setMaxPostingFactor, MAX_POSTING_FACTOR);
         PARSER.declareString(Builder::setDirectoryType, DIRECTORY_TYPE_FIELD);
     }
 
@@ -436,6 +452,11 @@ public record TestConfiguration(
         private int centroidHnswM = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_HNSW_M;
         private int centroidHnswBeamWidth = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_HNSW_BEAM_WIDTH;
         private int centroidGraphEfSearch = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_GRAPH_EF_SEARCH;
+        private int replicaCount = 1; // 1 => SPANN overspill disabled (default single-SOAR)
+        private int internalResultNum = 64;
+        private float rngFactor = 1.0f;
+        private float closureEpsilon = -1f; // disabled
+        private float maxPostingFactor = -1f; // no trimming
         private String directoryType = "default";
 
         /**
@@ -669,6 +690,31 @@ public record TestConfiguration(
 
         public Builder setCentroidGraphEfSearch(int centroidGraphEfSearch) {
             this.centroidGraphEfSearch = centroidGraphEfSearch;
+            return this;
+        }
+
+        public Builder setReplicaCount(int replicaCount) {
+            this.replicaCount = replicaCount;
+            return this;
+        }
+
+        public Builder setInternalResultNum(int internalResultNum) {
+            this.internalResultNum = internalResultNum;
+            return this;
+        }
+
+        public Builder setRngFactor(float rngFactor) {
+            this.rngFactor = rngFactor;
+            return this;
+        }
+
+        public Builder setClosureEpsilon(float closureEpsilon) {
+            this.closureEpsilon = closureEpsilon;
+            return this;
+        }
+
+        public Builder setMaxPostingFactor(float maxPostingFactor) {
+            this.maxPostingFactor = maxPostingFactor;
             return this;
         }
 
@@ -956,6 +1002,11 @@ public record TestConfiguration(
                 centroidHnswM,
                 centroidHnswBeamWidth,
                 centroidGraphEfSearch,
+                replicaCount,
+                internalResultNum,
+                rngFactor,
+                closureEpsilon,
+                maxPostingFactor,
                 directoryType,
                 datasetConfig
             );
@@ -1022,6 +1073,11 @@ public record TestConfiguration(
             builder.field(CENTROID_HNSW_M.getPreferredName(), centroidHnswM);
             builder.field(CENTROID_HNSW_BEAM_WIDTH.getPreferredName(), centroidHnswBeamWidth);
             builder.field(CENTROID_GRAPH_EF_SEARCH.getPreferredName(), centroidGraphEfSearch);
+            builder.field(REPLICA_COUNT.getPreferredName(), replicaCount);
+            builder.field(INTERNAL_RESULT_NUM.getPreferredName(), internalResultNum);
+            builder.field(RNG_FACTOR.getPreferredName(), rngFactor);
+            builder.field(CLOSURE_EPSILON.getPreferredName(), closureEpsilon);
+            builder.field(MAX_POSTING_FACTOR.getPreferredName(), maxPostingFactor);
             builder.field(DIRECTORY_TYPE_FIELD.getPreferredName(), directoryType);
             return builder.endObject();
         }

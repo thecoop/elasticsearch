@@ -52,7 +52,9 @@ public class ESNextDiskBBQCentroidGraphVectorsFormatTests extends ESNextDiskBBQV
             true, // indexCentroidsInGraph
             random().nextInt(8, 32), // M
             random().nextInt(40, 120), // beamWidth
-            random().nextBoolean() ? -1 : random().nextInt(8, 64) // efSearch
+            random().nextBoolean() ? -1 : random().nextInt(8, 64), // efSearch
+            random().nextBoolean() ? SpannOverspill.Params.DISABLED : new SpannOverspill.Params(random().nextInt(2, 5), 64, 1.0f, -1f, -1f) // SPANN
+                                                                                                                                            // overspill
         );
     }
 

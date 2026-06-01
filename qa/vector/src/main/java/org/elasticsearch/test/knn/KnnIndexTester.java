@@ -39,6 +39,7 @@ import org.elasticsearch.gpu.codec.ES92GpuHnswSQVectorsFormat;
 import org.elasticsearch.gpu.codec.ES92GpuHnswVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.ES920DiskBBQVectorsFormat;
 import org.elasticsearch.index.codec.vectors.diskbbq.next.ESNextDiskBBQVectorsFormat;
+import org.elasticsearch.index.codec.vectors.diskbbq.next.SpannOverspill;
 import org.elasticsearch.index.codec.vectors.es93.ES93BinaryQuantizedVectorsFormat;
 import org.elasticsearch.index.codec.vectors.es93.ES93FlatVectorFormat;
 import org.elasticsearch.index.codec.vectors.es93.ES93HnswBinaryQuantizedVectorsFormat;
@@ -232,7 +233,14 @@ public class KnnIndexTester {
                     args.indexCentroidsInGraph(),
                     args.centroidHnswM(),
                     args.centroidHnswBeamWidth(),
-                    args.centroidGraphEfSearch()
+                    args.centroidGraphEfSearch(),
+                    new SpannOverspill.Params(
+                        args.replicaCount(),
+                        args.internalResultNum(),
+                        args.rngFactor(),
+                        args.closureEpsilon(),
+                        args.maxPostingFactor()
+                    )
                 );
             }
             case GPU_HNSW -> switch (quantizeBits) {
