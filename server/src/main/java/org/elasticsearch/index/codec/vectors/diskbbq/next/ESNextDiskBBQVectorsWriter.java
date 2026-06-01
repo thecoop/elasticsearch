@@ -757,6 +757,10 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             metaOutput.writeVLong(graphSerializedOffset);
             metaOutput.writeVLong(graphSerializedLength);
             metaOutput.writeInt(centroidGraphEfSearch);
+            // SPANN overspill replicates vectors into several postings. When enabled, signal the reader to
+            // (a) budget the search by postings/heads visited rather than vectors, and (b) dedup docids across
+            // postings, so replication adds coverage instead of inflating the per-visit-ratio vector budget.
+            metaOutput.writeByte(spannParams.enabled() ? (byte) 1 : (byte) 0);
         } else {
             metaOutput.writeByte((byte) 0);
         }

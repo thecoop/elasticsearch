@@ -380,6 +380,7 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         long graphSerializedOffset = -1;
         long graphSerializedLength = -1;
         int centroidGraphEfSearch = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_GRAPH_EF_SEARCH;
+        boolean searchCentroidBudget = false;
         if (versionMeta >= ESNextDiskBBQVectorsFormat.VERSION_CENTROID_GRAPH) {
             if (input.readByte() == 1) {
                 hasCentroidGraph = true;
@@ -388,6 +389,7 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
                 graphSerializedOffset = input.readVLong();
                 graphSerializedLength = input.readVLong();
                 centroidGraphEfSearch = input.readInt();
+                searchCentroidBudget = input.readByte() == 1;
             }
         }
         return new NextFieldEntry(
@@ -414,7 +416,8 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             graphPostingTableOffset,
             graphSerializedOffset,
             graphSerializedLength,
-            centroidGraphEfSearch
+            centroidGraphEfSearch,
+            searchCentroidBudget
         );
     }
 
@@ -454,6 +457,8 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         final long graphSerializedOffset;
         final long graphSerializedLength;
         final int centroidGraphEfSearch;
+        // Experiment-only: SPANN overspill is active, so search by posting/head count and dedup docids.
+        final boolean searchCentroidBudget;
 
         NextFieldEntry(
             String rawVectorFormat,
@@ -479,7 +484,8 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             long graphPostingTableOffset,
             long graphSerializedOffset,
             long graphSerializedLength,
-            int centroidGraphEfSearch
+            int centroidGraphEfSearch,
+            boolean searchCentroidBudget
         ) {
             super(
                 rawVectorFormat,
@@ -507,6 +513,7 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             this.graphSerializedOffset = graphSerializedOffset;
             this.graphSerializedLength = graphSerializedLength;
             this.centroidGraphEfSearch = centroidGraphEfSearch;
+            this.searchCentroidBudget = searchCentroidBudget;
         }
 
         public ESNextDiskBBQVectorsFormat.QuantEncoding quantEncoding() {
@@ -824,6 +831,18 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
     }
 
     @Override
+    protected long maxVectorsToVisit(NextFieldEntry entry, float visitRatio, int numVectors) {
+        if (entry.searchCentroidBudget) {
+            // SPANN-style head-count budget: drain the centroid iterator in full (its own centroid budget,
+            // derived from the visit ratio, governs how many postings/heads are visited). This way replication
+            // turns into broader boundary coverage at a fixed head count, instead of shrinking the head count
+            // because replicated postings are larger.
+            return Long.MAX_VALUE;
+        }
+        return super.maxVectorsToVisit(entry, visitRatio, numVectors);
+    }
+
+    @Override
     public PostingVisitor getPostingVisitor(
         FieldInfo fieldInfo,
         FloatVectorValues values,
@@ -847,6 +866,16 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         if (entry.numSlices > 0) {
             // skip slice offsets
             centroidSlice.skipBytes((long) entry.numSlices * Integer.BYTES);
+        }
+        // When SPANN overspill is active a vector lives in several postings; dedup by docid across the whole
+        // query so a replicated vector occupies at most one slot in the top-k queue (which keys on score+docid
+        // and does not dedup). The centroid iterator emits postings nearest-first, so the first time a docid is
+        // seen it is scored against its closest visited centroid — the most accurate score — and kept.
+        final FixedBitSet seen;
+        if (entry.searchCentroidBudget && values.size() > 0) {
+            seen = new FixedBitSet(values.ordToDoc(values.size() - 1) + 1);
+        } else {
+            seen = null;
         }
         final QueryQuantizer queryQuantizer;
         if (numParents > 0) {
@@ -883,11 +912,12 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
                 needsScoring,
                 values,
                 startDoc,
-                endDoc
+                endDoc,
+                seen
             );
 
         } else {
-            return new MemorySegmentPostingsVisitor(queryQuantizer, quantEncoding, indexInput, entry, fieldInfo, needsScoring);
+            return new MemorySegmentPostingsVisitor(queryQuantizer, quantEncoding, indexInput, entry, fieldInfo, needsScoring, seen);
         }
     }
 
@@ -1007,9 +1037,10 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             Bits acceptDocs,
             FloatVectorValues values,
             int startDocId,
-            int endDocId
+            int endDocId,
+            FixedBitSet seen
         ) throws IOException {
-            super(queryQuantizer, quantEncoding, indexInput, entry, fieldInfo, acceptDocs);
+            super(queryQuantizer, quantEncoding, indexInput, entry, fieldInfo, acceptDocs, seen);
             this.startDocId = startDocId;
             this.endDocId = endDocId;
             this.floatVectorValues = values;
@@ -1049,7 +1080,9 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         protected int docToBulkScore(int[] docIds, int[] offsets, Bits acceptDocs, int bulkSize) {
             int docToScore = 0;
             for (int i = 0; i < bulkSize; i++) {
-                if (docIds[i] == -1 || (acceptDocs != null && acceptDocs.get(docIds[i]) == false)) {
+                final int doc = docIds[i];
+                // mirror the base filter, plus SPANN dedup so a replicated docid is scored once per query
+                if (doc == -1 || (acceptDocs != null && acceptDocs.get(doc) == false) || (seen != null && seen.getAndSet(doc))) {
                     docIds[i] = -1;
                 } else {
                     offsets[docToScore] = i;
@@ -1098,6 +1131,9 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         final DocIdsWriter idsWriter = new DocIdsWriter();
         final VectorSimilarityFunction similarityFunction;
         final long quantizedVectorByteSize;
+        // Non-null only under SPANN overspill: tracks docids already collected this query so replicated
+        // vectors are scored once (at their nearest visited centroid) rather than occupying multiple top-k slots.
+        final FixedBitSet seen;
 
         MemorySegmentPostingsVisitor(
             QueryQuantizer queryQuantizer,
@@ -1105,7 +1141,8 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             IndexInput indexInput,
             FieldEntry entry,
             FieldInfo fieldInfo,
-            Bits acceptDocs
+            Bits acceptDocs,
+            FixedBitSet seen
         ) throws IOException {
             this.queryQuantizer = queryQuantizer;
             this.indexInput = indexInput;
@@ -1113,6 +1150,7 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
             this.entry = entry;
             this.fieldInfo = fieldInfo;
             this.acceptDocs = acceptDocs;
+            this.seen = seen;
             quantizedVectorByteSize = quantEncoding.getDocPackedLength(fieldInfo.getVectorDimension());
             quantizedByteLength = quantizedVectorByteSize + (Float.BYTES * 3) + Integer.BYTES;
             osqVectorsScorer = ESVectorUtil.getES940OSQVectorsScorer(
@@ -1192,12 +1230,14 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         }
 
         protected int docToBulkScore(int[] docIds, int[] offsets, Bits acceptDocs, int bulkSize) {
-            if (acceptDocs == null) {
+            if (acceptDocs == null && seen == null) {
                 return bulkSize;
             }
             int docToScore = 0;
             for (int i = 0; i < bulkSize; i++) {
-                if (docIds[i] == -1 || acceptDocs.get(docIds[i]) == false) {
+                final int doc = docIds[i];
+                // skip already-filtered (-1), filtered-out, or (under SPANN dedup) docids seen earlier this query
+                if (doc == -1 || (acceptDocs != null && acceptDocs.get(doc) == false) || (seen != null && seen.getAndSet(doc))) {
                     docIds[i] = -1;
                 } else {
                     offsets[docToScore] = i;
