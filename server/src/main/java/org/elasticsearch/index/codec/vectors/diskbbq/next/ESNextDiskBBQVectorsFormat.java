@@ -573,7 +573,7 @@ public class ESNextDiskBBQVectorsFormat extends KnnVectorsFormat {
                     + centroidHnswBeamWidth
             );
         }
-        this.spannParams = spannParams == null ? SpannOverspill.Params.DISABLED : spannParams;
+        this.spannParams = new SpannOverspill.Params(4, 64, 0.75f, -1f, 1.25f);
         this.indexCentroidsInGraph = indexCentroidsInGraph;
         this.centroidHnswM = centroidHnswM;
         this.centroidHnswBeamWidth = centroidHnswBeamWidth;

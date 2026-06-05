@@ -85,7 +85,12 @@ final class CentroidGraphIO {
      *                      ids from empty-cluster remapping, which are filtered out
      * @return adjacency lists per centroid ordinal
      */
-    static int[][] buildAdjacencyFromNeighborhoods(NeighborHood[] neighborhoods, float[][] centroids, int maxConn) {
+    static int[][] buildAdjacencyFromNeighborhoods(
+        NeighborHood[] neighborhoods,
+        float[][] centroids,
+        int maxConn,
+        VectorSimilarityFunction similarity
+    ) {
         final int n = centroids.length;
         @SuppressWarnings("unchecked")
         final List<Integer>[] adjacency = new List[n];
@@ -96,7 +101,7 @@ final class CentroidGraphIO {
         for (int c = 0; c < n; c++) {
             final NeighborHood neighborHood = neighborhoods[c];
             final int[] candidates = neighborHood == null ? new int[0] : neighborHood.neighbors();
-            final int[] kept = diversePruneSorted(c, candidates, centroids, maxConn);
+            final int[] kept = diversePruneSorted(c, candidates, centroids, maxConn, similarity);
             for (int neighbour : kept) {
                 addUnique(adjacency[c], neighbour);
                 addUnique(adjacency[neighbour], c); // symmetrise so neighbours are reachable both ways
@@ -110,8 +115,8 @@ final class CentroidGraphIO {
                 result[c] = toIntArray(list);
             } else {
                 final int[] candidates = toIntArray(list);
-                sortByDistanceTo(c, candidates, centroids);
-                result[c] = diversePruneSorted(c, candidates, centroids, maxConn);
+                sortByDistanceTo(c, candidates, centroids, similarity);
+                result[c] = diversePruneSorted(c, candidates, centroids, maxConn, similarity);
             }
         }
         return result;
@@ -128,8 +133,13 @@ final class CentroidGraphIO {
      * @param neighborhoods level-0 nearest-neighbour lists (may be {@code null} only when {@code size <= 1})
      * @param seed seed for the (deterministic) level assignment
      */
-    static MultiLevelAdjacency buildMultiLevelFromNeighborhoods(NeighborHood[] neighborhoods, float[][] centroids, int maxConn, long seed)
-        throws IOException {
+    static MultiLevelAdjacency buildMultiLevelFromNeighborhoods(
+        NeighborHood[] neighborhoods,
+        float[][] centroids,
+        int maxConn,
+        long seed,
+        VectorSimilarityFunction similarity
+    ) throws IOException {
         final int n = centroids.length;
         if (n <= 1) {
             final int[][] level0 = new int[n][];
@@ -138,7 +148,7 @@ final class CentroidGraphIO {
             }
             return new MultiLevelAdjacency(maxConn, 1, 0, n, new int[1][], new int[][][] { level0 });
         }
-        final int[][] level0 = buildAdjacencyFromNeighborhoods(neighborhoods, centroids, maxConn);
+        final int[][] level0 = buildAdjacencyFromNeighborhoods(neighborhoods, centroids, maxConn, similarity);
         // assign levels (standard HNSW geometric distribution)
         final double mL = 1.0 / Math.log(Math.max(maxConn, 2));
         final Random random = new Random(seed);
@@ -171,7 +181,7 @@ final class CentroidGraphIO {
                 }
             }
             nodesByLevel[level] = nodes;
-            neighborsByLevel[level] = buildLevelAdjacency(nodes, centroids, maxConn);
+            neighborsByLevel[level] = buildLevelAdjacency(nodes, centroids, maxConn, similarity);
         }
         final int entryNode = numLevels > 1 ? nodesByLevel[numLevels - 1][0] : 0;
         return new MultiLevelAdjacency(maxConn, numLevels, entryNode, n, nodesByLevel, neighborsByLevel);
@@ -181,7 +191,8 @@ final class CentroidGraphIO {
      * Builds the adjacency among the given (small) set of upper-level nodes via a brute-force kNN over the
      * subset and the same diversity prune used for level 0. Returns neighbours as global centroid ordinals.
      */
-    private static int[][] buildLevelAdjacency(int[] levelNodes, float[][] centroids, int maxConn) throws IOException {
+    private static int[][] buildLevelAdjacency(int[] levelNodes, float[][] centroids, int maxConn, VectorSimilarityFunction similarity)
+        throws IOException {
         final int m = levelNodes.length;
         if (m == 1) {
             return new int[][] { new int[0] };
@@ -190,9 +201,11 @@ final class CentroidGraphIO {
         for (int i = 0; i < m; i++) {
             sub[i] = centroids[levelNodes[i]];
         }
+        // The candidate pool is a Euclidean kNN over this level's nodes; the diversity prune below selects the
+        // edges under the configured similarity (identical to Euclidean for normalized cosine/euclidean).
         final int candidates = Math.min(m - 1, LEVEL_NEIGHBOR_CANDIDATES);
         final NeighborHood[] subNeighborhoods = NeighborHood.computeNeighborhoods(sub, candidates);
-        final int[][] localAdjacency = buildAdjacencyFromNeighborhoods(subNeighborhoods, sub, maxConn);
+        final int[][] localAdjacency = buildAdjacencyFromNeighborhoods(subNeighborhoods, sub, maxConn, similarity);
         final int[][] globalAdjacency = new int[m][];
         for (int i = 0; i < m; i++) {
             final int[] local = localAdjacency[i];
@@ -210,7 +223,7 @@ final class CentroidGraphIO {
      * only if it is closer to {@code node} than to every already-kept neighbour. Skips self, out-of-range
      * and duplicate ids (which can appear after empty-cluster remapping).
      */
-    private static int[] diversePruneSorted(int node, int[] candidates, float[][] centroids, int maxConn) {
+    private static int[] diversePruneSorted(int node, int[] candidates, float[][] centroids, int maxConn, VectorSimilarityFunction sim) {
         final int[] kept = new int[maxConn];
         int keptCount = 0;
         for (int i = 0; i < candidates.length && keptCount < maxConn; i++) {
@@ -228,10 +241,10 @@ final class CentroidGraphIO {
             if (duplicate) {
                 continue;
             }
-            final float distToNode = ESVectorUtil.squareDistance(centroids[node], centroids[candidate]);
+            final float distToNode = dist(sim, centroids[node], centroids[candidate]);
             boolean keep = true;
             for (int k = 0; k < keptCount; k++) {
-                if (ESVectorUtil.squareDistance(centroids[candidate], centroids[kept[k]]) < distToNode) {
+                if (dist(sim, centroids[candidate], centroids[kept[k]]) < distToNode) {
                     keep = false;
                     break;
                 }
@@ -243,19 +256,26 @@ final class CentroidGraphIO {
         return Arrays.copyOf(kept, keptCount);
     }
 
-    private static void sortByDistanceTo(int node, int[] candidates, float[][] centroids) {
+    private static void sortByDistanceTo(int node, int[] candidates, float[][] centroids, VectorSimilarityFunction sim) {
         final Integer[] boxed = new Integer[candidates.length];
         for (int i = 0; i < candidates.length; i++) {
             boxed[i] = candidates[i];
         }
-        Arrays.sort(boxed, (a, b) -> {
-            float da = ESVectorUtil.squareDistance(centroids[node], centroids[a]);
-            float db = ESVectorUtil.squareDistance(centroids[node], centroids[b]);
-            return Float.compare(da, db);
-        });
+        Arrays.sort(boxed, (a, b) -> Float.compare(dist(sim, centroids[node], centroids[a]), dist(sim, centroids[node], centroids[b])));
         for (int i = 0; i < candidates.length; i++) {
             candidates[i] = boxed[i];
         }
+    }
+
+    /**
+     * A distance under the configured similarity (lower == closer), so the RNG diversity prune and sort work
+     * for any metric. {@link VectorSimilarityFunction#compare} returns higher-is-closer, so we negate it. For
+     * normalized cosine/euclidean this induces the same ordering as squared L2, so the resulting edges are
+     * identical to the previous Euclidean build; for {@code MAXIMUM_INNER_PRODUCT} it makes edge selection
+     * inner-product-aware.
+     */
+    private static float dist(VectorSimilarityFunction sim, float[] a, float[] b) {
+        return -sim.compare(a, b);
     }
 
     private static void addUnique(List<Integer> list, int value) {

@@ -10,6 +10,7 @@
 package org.elasticsearch.index.codec.vectors.diskbbq.next;
 
 import org.apache.lucene.index.FloatVectorValues;
+import org.apache.lucene.index.VectorSimilarityFunction;
 import org.elasticsearch.simdvec.ESVectorUtil;
 import org.elasticsearch.test.ESTestCase;
 
@@ -52,7 +53,17 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 1, 64, LAMBDA, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            1,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
         for (int v = 0; v < numVectors; v++) {
             assertEquals("vector " + v + " should have a single replica", 1, replicas.centroidsPerVector()[v].length);
             assertEquals(primary[v], replicas.centroidsPerVector()[v][0]);
@@ -71,7 +82,17 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, replicaCount, 64, LAMBDA, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            replicaCount,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
 
         for (int v = 0; v < numVectors; v++) {
             int[] r = replicas.centroidsPerVector()[v];
@@ -104,7 +125,17 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            6,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
 
         for (int v = 0; v < numVectors; v++) {
             int[] r = replicas.centroidsPerVector()[v];
@@ -146,7 +177,17 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = new int[] { 7 };
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            6,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
         assertEquals("deep vector must keep only its primary", 1, replicas.centroidsPerVector()[0].length);
         assertEquals(7, replicas.centroidsPerVector()[0][0]);
     }
@@ -175,7 +216,17 @@ public class SpannOverspillTests extends ESTestCase {
         int[] primary = primaryAssignment(vectors, centroids);
         assertEquals("primary should be c0", 0, primary[0]);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            6,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
         int[] r = replicas.centroidsPerVector()[0];
         assertTrue("boundary vector should get a secondary replica", r.length >= 2);
         assertEquals("primary first", 0, r[0]);
@@ -184,6 +235,53 @@ public class SpannOverspillTests extends ESTestCase {
         float interSq = ESVectorUtil.squareDistance(centroids[0], centroids[1]);
         float dot = 0.5f * (ESVectorUtil.squareDistance(centroids[0], x) + ESVectorUtil.squareDistance(centroids[1], x) - interSq);
         assertTrue("secondary residual should oppose the primary residual (dot < 0), got " + dot, dot < 0f);
+    }
+
+    /**
+     * Under {@code MAXIMUM_INNER_PRODUCT} the assigner uses the SOAR (orthogonal-residual) rule instead of AIR.
+     * Every kept secondary must still clear the shared SRAIR gate, recomputed with the SOAR penalty
+     * {@code (r_k . r')^2 / ||r_k||^2}. Validates the MIP path runs and gates correctly.
+     */
+    public void testSoarGateUnderInnerProduct() throws IOException {
+        int dim = 16;
+        int numCentroids = 64;
+        int numVectors = 512;
+        float[][] centroids = randomCentroids(numCentroids, dim);
+        List<float[]> vectors = randomVectors(numVectors, dim);
+        FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
+        int[] primary = primaryAssignment(vectors, centroids); // primary stays Euclidean-nearest
+
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(
+            values,
+            centroids,
+            primary,
+            6,
+            64,
+            LAMBDA,
+            M,
+            BEAM_WIDTH,
+            VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT
+        );
+
+        for (int v = 0; v < numVectors; v++) {
+            int[] r = replicas.centroidsPerVector()[v];
+            float[] d = replicas.sqDistPerVector()[v];
+            float threshold = (1f + LAMBDA) * d[0];
+            for (int i = 1; i < r.length; i++) {
+                float maxPenalty = -Float.MAX_VALUE;
+                for (int k = 0; k < i; k++) {
+                    float interSq = ESVectorUtil.squareDistance(centroids[r[k]], centroids[r[i]]);
+                    float dot = 0.5f * (d[k] + d[i] - interSq);
+                    float penalty = d[k] > 1e-12f ? (dot * dot) / d[k] : 0f; // SOAR orthogonality penalty
+                    maxPenalty = Math.max(maxPenalty, penalty);
+                }
+                float soarLoss = d[i] + LAMBDA * maxPenalty;
+                assertTrue(
+                    "SOAR replica " + i + " of vector " + v + " violates gate: loss=" + soarLoss + " threshold=" + threshold,
+                    soarLoss < threshold + 1e-3f
+                );
+            }
+        }
     }
 
     private static float[][] randomCentroids(int n, int dim) {

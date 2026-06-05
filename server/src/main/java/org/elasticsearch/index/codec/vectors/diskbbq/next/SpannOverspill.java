@@ -10,9 +10,9 @@
 package org.elasticsearch.index.codec.vectors.diskbbq.next;
 
 import org.apache.lucene.index.FloatVectorValues;
+import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopKnnCollector;
-import org.apache.lucene.util.VectorUtil;
 import org.apache.lucene.util.hnsw.HnswGraphBuilder;
 import org.apache.lucene.util.hnsw.HnswGraphSearcher;
 import org.apache.lucene.util.hnsw.OnHeapHnswGraph;
@@ -27,15 +27,18 @@ import java.util.Arrays;
 /**
  * Experiment-only SPANN-style multi-cluster assignment ("overspill"). Each vector is assigned to up to
  * {@code replicaCount} nearby centroids ("postings") instead of just one. The centroid HNSW graph is used as
- * SPANN's <em>head index</em>: we graph-search each vector's nearest centroids, then select secondaries with
- * the RAIRS <b>AIR</b> (Amplified Inverse Residual) metric gated by <b>SRAIR</b>. AIR is the Euclidean
- * counterpart to SOAR's orthogonal-residual rule (SOAR targets inner product): it prefers a secondary residual
- * pointing <em>opposite</em> to the primary residual — the far side of the vector — which is exactly where a
- * boundary query routes. SRAIR keeps a candidate only when its AIR loss beats re-using the primary, so
- * deep-in-cluster vectors stay single-assigned. Candidates are considered nearest-first and every one passing
- * the gate is kept (up to {@code replicaCount}); the primary (nearest) centroid is always kept first.
- * Membership trimming of overfull postings is applied later by the writer using the returned per-replica
- * distances.
+ * SPANN's <em>head index</em>: we graph-search each vector's nearest centroids <em>under the configured
+ * similarity</em> (so candidates are the centroids a query would actually route to), then select secondaries
+ * with a residual rule gated by <b>SRAIR</b>. The residual rule follows the scoring metric: <b>AIR</b>
+ * (Amplified Inverse Residual, RAIRS) for Euclidean/cosine — prefers a secondary residual pointing
+ * <em>opposite</em> the primary residual (the far side of the vector, where a boundary query routes); and
+ * <b>SOAR</b> (orthogonal residual, ScaNN) for {@code MAXIMUM_INNER_PRODUCT} — prefers a residual orthogonal
+ * to the kept ones. Both gate on the same {@code (1+lambda)*||r_primary||^2} (re-using the primary), so
+ * deep-in-cluster vectors stay single-assigned. Residuals are always Euclidean ({@code r = c - x}; primary
+ * assignment and quantization stay L2); only routing and the residual penalty track the configured metric.
+ * Candidates are considered nearest-first and every one passing the gate is kept (up to {@code replicaCount});
+ * the primary (nearest) centroid is always kept first. Membership trimming of overfull postings is applied
+ * later by the writer using the returned per-replica distances.
  *
  * <p>Distances are squared L2 (matching the existing SOAR/neighbourhood code); for cosine/MIP the vectors
  * are unit-normalised so L2 ordering matches. See RAIRS (Yang &amp; Chen, SIGMOD 2026).
@@ -74,8 +77,10 @@ public final class SpannOverspill {
      * dot {@code r_i . r'} is recovered from squared distances via
      * {@code r_i . r' = (||r_i||^2 + ||r'||^2 - ||c_i - c'||^2) / 2}, so no full-vector dot products are needed.
      *
-     * @param primary the primary (nearest) centroid per vector; always kept as replica 0
-     * @param lambda  AIR amplification (RAIRS uses 0.5); larger favours opposite-side replicas more strongly
+     * @param primary    the primary (nearest) centroid per vector; always kept as replica 0
+     * @param lambda     residual amplification (RAIRS/ScaNN use ~0.5)
+     * @param similarity the configured query similarity; routes candidate search and selects AIR (Euclidean/
+     *                   cosine) vs SOAR ({@code MAXIMUM_INNER_PRODUCT}). Residuals stay Euclidean regardless.
      */
     static Replicas assign(
         FloatVectorValues vectors,
@@ -85,7 +90,8 @@ public final class SpannOverspill {
         int internalResultNum,
         float lambda,
         int m,
-        int beamWidth
+        int beamWidth,
+        VectorSimilarityFunction similarity
     ) throws IOException {
         final int n = vectors.size();
         final int[][] replicas = new int[n][];
@@ -99,8 +105,17 @@ public final class SpannOverspill {
             }
             return new Replicas(replicas, dists);
         }
-        final OnHeapHnswGraph graph = HnswGraphBuilder.create(new CentroidScorerSupplier(centroids), m, beamWidth, 42L, centroids.length)
-            .build(centroids.length);
+        // The candidate head-index is built and searched under the CONFIGURED similarity, so the candidates are
+        // the centroids a query would route to. SOAR (orthogonal residual) is the inner-product rule; AIR
+        // (inverse residual) is the Euclidean/cosine rule. Residuals themselves are always Euclidean.
+        final boolean useSoar = similarity == VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
+        final OnHeapHnswGraph graph = HnswGraphBuilder.create(
+            new CentroidScorerSupplier(centroids, similarity),
+            m,
+            beamWidth,
+            42L,
+            centroids.length
+        ).build(centroids.length);
         final int[] kept = new int[replicaCount];
         final float[] keptDist = new float[replicaCount]; // ||r_i||^2 : squared distance from the vector to kept centroid i
         for (int v = 0; v < n; v++) {
@@ -111,30 +126,36 @@ public final class SpannOverspill {
             kept[count] = prim;
             keptDist[count] = primarySq;
             count++;
-            // SPANN head-index search: nearest centroids to this vector, nearest first
-            final RandomVectorScorer scorer = queryScorer(vector, centroids);
+            // head-index search: the centroids this vector (≈ a query near it) routes to under the similarity
+            final RandomVectorScorer scorer = queryScorer(vector, centroids, similarity);
             final TopKnnCollector collector = new TopKnnCollector(internalResultNum, Integer.MAX_VALUE);
             HnswGraphSearcher.search(scorer, collector, graph, null);
             final ScoreDoc[] candidates = collector.topDocs().scoreDocs;
-            // SRAIR gate: a secondary is only worthwhile if its AIR loss beats re-using the primary.
+            // SRAIR gate: a secondary is only worthwhile if its loss beats re-using the primary. Evaluated at
+            // c'=c_primary both AIR and SOAR give (1+lambda)*||r_primary||^2, so the threshold is shared.
             final float srairThreshold = (1f + lambda) * primarySq;
             for (int ci = 0; ci < candidates.length && count < replicaCount; ci++) {
                 final int candidate = candidates[ci].doc;
                 if (candidate == prim) {
                     continue;
                 }
-                final float candidateSq = 1f / candidates[ci].score - 1f; // ||r'||^2, inverting the normalized score
-                // AIR with max-aggregation: penalise alignment with the most-aligned already-kept residual.
-                float maxDot = -Float.MAX_VALUE;
+                // Euclidean residual magnitude ||r'||^2, computed directly (the graph score is now the configured
+                // similarity, not a recoverable L2 distance).
+                final float candidateSq = ESVectorUtil.squareDistance(vector, centroids[candidate]);
+                // max-aggregate the residual penalty against the most-aligned already-kept residual.
+                // r_k . r' = (||r_k||^2 + ||r'||^2 - ||c_k - c'||^2) / 2
+                float maxPenalty = -Float.MAX_VALUE;
                 for (int k = 0; k < count; k++) {
                     final float interSq = ESVectorUtil.squareDistance(centroids[kept[k]], centroids[candidate]);
-                    final float dot = 0.5f * (keptDist[k] + candidateSq - interSq); // r_k . r'
-                    if (dot > maxDot) {
-                        maxDot = dot;
+                    final float dot = 0.5f * (keptDist[k] + candidateSq - interSq);
+                    // AIR penalises same-direction (large dot); SOAR penalises non-orthogonality ((dot/||r_k||)^2)
+                    final float penalty = useSoar ? (keptDist[k] > 1e-12f ? (dot * dot) / keptDist[k] : 0f) : dot;
+                    if (penalty > maxPenalty) {
+                        maxPenalty = penalty;
                     }
                 }
-                final float airLoss = candidateSq + lambda * maxDot;
-                if (airLoss < srairThreshold) {
+                final float loss = candidateSq + lambda * maxPenalty;
+                if (loss < srairThreshold) {
                     kept[count] = candidate;
                     keptDist[count] = candidateSq;
                     count++;
@@ -146,12 +167,12 @@ public final class SpannOverspill {
         return new Replicas(replicas, dists);
     }
 
-    /** Scorer for a fixed query vector against the centroids (higher score == nearer). */
-    private static RandomVectorScorer queryScorer(float[] query, float[][] centroids) {
+    /** Scorer for a fixed query vector against the centroids under the configured similarity (higher == nearer). */
+    private static RandomVectorScorer queryScorer(float[] query, float[][] centroids, VectorSimilarityFunction similarity) {
         return new RandomVectorScorer() {
             @Override
             public float score(int node) {
-                return VectorUtil.normalizeDistanceToUnitInterval(ESVectorUtil.squareDistance(query, centroids[node]));
+                return similarity.compare(query, centroids[node]);
             }
 
             @Override
@@ -161,8 +182,8 @@ public final class SpannOverspill {
         };
     }
 
-    /** Centroid-vs-centroid scorer supplier used to build the head-index graph over the centroids. */
-    private record CentroidScorerSupplier(float[][] centroids) implements RandomVectorScorerSupplier {
+    /** Centroid-vs-centroid scorer supplier used to build the head-index graph under the configured similarity. */
+    private record CentroidScorerSupplier(float[][] centroids, VectorSimilarityFunction similarity) implements RandomVectorScorerSupplier {
         @Override
         public UpdateableRandomVectorScorer scorer() {
             return new UpdateableRandomVectorScorer() {
@@ -175,7 +196,7 @@ public final class SpannOverspill {
 
                 @Override
                 public float score(int node) {
-                    return VectorUtil.normalizeDistanceToUnitInterval(ESVectorUtil.squareDistance(centroids[ordinal], centroids[node]));
+                    return similarity.compare(centroids[ordinal], centroids[node]);
                 }
 
                 @Override
@@ -187,7 +208,7 @@ public final class SpannOverspill {
 
         @Override
         public RandomVectorScorerSupplier copy() {
-            return new CentroidScorerSupplier(centroids);
+            return new CentroidScorerSupplier(centroids, similarity);
         }
     }
 }

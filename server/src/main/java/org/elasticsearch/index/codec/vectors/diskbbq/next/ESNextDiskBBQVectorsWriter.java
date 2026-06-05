@@ -1104,7 +1104,8 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             neighborhoods,
             rawCentroids,
             centroidHnswM,
-            CENTROID_GRAPH_SEED
+            CENTROID_GRAPH_SEED,
+            fieldInfo.getVectorSimilarityFunction()
         );
         CentroidGraphIO.writeMultiLevelGraph(centroidOutput, graph);
         graphSerializedLength = centroidOutput.getFilePointer() - fieldCentroidStart - graphSerializedOffset;
@@ -1186,7 +1187,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
                 : HierarchicalKMeans.ofSerial(CentroidOps.FLOAT, floatVectorValues.dimension());
             KMeansResult<float[]> kMeansResult = calculateCentroids(graphKMeans, floatVectorValues);
             currentCentroidNeighborhoods = kMeansResult.neighborhoods();
-            computeReplicas(kMeansResult, floatVectorValues);
+            computeReplicas(fieldInfo, kMeansResult, floatVectorValues);
             if (logger.isDebugEnabled()) {
                 logger.debug("final centroid count: {}", kMeansResult.centroids().length);
             }
@@ -1426,7 +1427,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         HierarchicalKMeans<float[]> hierarchicalKMeans = HierarchicalKMeans.ofSerial(CentroidOps.FLOAT, floatVectorValues.dimension());
         KMeansResult<float[]> kMeansResult = calculateCentroids(hierarchicalKMeans, floatVectorValues);
         currentCentroidNeighborhoods = kMeansResult.neighborhoods();
-        computeReplicas(kMeansResult, floatVectorValues);
+        computeReplicas(fieldInfo, kMeansResult, floatVectorValues);
         if (logger.isDebugEnabled()) {
             logger.debug("final centroid count: {}", kMeansResult.centroids().length);
         }
@@ -1451,7 +1452,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
      * {@link #buildAndWritePostingsLists} to write (and trim). Otherwise leaves the replicas unset so the
      * default single-SOAR overspill is used.
      */
-    private void computeReplicas(KMeansResult<float[]> kMeansResult, FloatVectorValues vectors) throws IOException {
+    private void computeReplicas(FieldInfo fieldInfo, KMeansResult<float[]> kMeansResult, FloatVectorValues vectors) throws IOException {
         if (indexCentroidsInGraph == false || spannParams.enabled() == false || kMeansResult.centroids().length <= 1) {
             return;
         }
@@ -1461,9 +1462,10 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             kMeansResult.assignments(),
             spannParams.replicaCount(),
             spannParams.internalResultNum(),
-            spannParams.rngFactor(), // reused as the AIR amplification lambda (RAIRS uses 0.5)
+            spannParams.rngFactor(), // reused as the residual amplification lambda (RAIRS/ScaNN use 0.5)
             centroidHnswM,
-            centroidHnswBeamWidth
+            centroidHnswBeamWidth,
+            fieldInfo.getVectorSimilarityFunction()
         );
         currentReplicas = replicas.centroidsPerVector();
         currentReplicaDists = replicas.sqDistPerVector();

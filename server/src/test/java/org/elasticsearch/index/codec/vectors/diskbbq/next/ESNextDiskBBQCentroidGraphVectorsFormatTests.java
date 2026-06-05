@@ -82,7 +82,13 @@ public class ESNextDiskBBQCentroidGraphVectorsFormatTests extends ESNextDiskBBQV
         int candidates = Math.min(numCentroids - 1, 64);
         org.elasticsearch.index.codec.vectors.cluster.NeighborHood[] neighborhoods =
             org.elasticsearch.index.codec.vectors.cluster.NeighborHood.computeNeighborhoods(centroids, candidates);
-        CentroidGraphIO.MultiLevelAdjacency built = CentroidGraphIO.buildMultiLevelFromNeighborhoods(neighborhoods, centroids, m, 42L);
+        CentroidGraphIO.MultiLevelAdjacency built = CentroidGraphIO.buildMultiLevelFromNeighborhoods(
+            neighborhoods,
+            centroids,
+            m,
+            42L,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
         assertTrue("expected more than one level for " + numCentroids + " centroids", built.numLevels() >= 1);
         // BFS the level-0 adjacency: it must connect every centroid
         assertEquals("in-memory level-0 adjacency not fully connected", numCentroids, reachable(built.neighborsByLevel()[0], 0));
@@ -152,7 +158,13 @@ public class ESNextDiskBBQCentroidGraphVectorsFormatTests extends ESNextDiskBBQV
         int m = random().nextInt(8, 32);
         int candidates = Math.min(numCentroids - 1, 64);
         var neighborhoods = org.elasticsearch.index.codec.vectors.cluster.NeighborHood.computeNeighborhoods(centroids, candidates);
-        CentroidGraphIO.MultiLevelAdjacency built = CentroidGraphIO.buildMultiLevelFromNeighborhoods(neighborhoods, centroids, m, 42L);
+        CentroidGraphIO.MultiLevelAdjacency built = CentroidGraphIO.buildMultiLevelFromNeighborhoods(
+            neighborhoods,
+            centroids,
+            m,
+            42L,
+            VectorSimilarityFunction.EUCLIDEAN
+        );
         try (Directory dir = newDirectory()) {
             try (var out = dir.createOutput("g", org.apache.lucene.store.IOContext.DEFAULT)) {
                 out.writeBytes(flat, 0, flat.length);
