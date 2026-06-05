@@ -1447,7 +1447,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
 
     /**
      * Experiment-only: when the centroid graph and SPANN overspill are enabled, assign each vector to up to
-     * {@code replicaCount} centroids via centroid-graph search + RNG diversity, stashing the result for
+     * {@code replicaCount} centroids via centroid-graph search + AIR/SRAIR selection, stashing the result for
      * {@link #buildAndWritePostingsLists} to write (and trim). Otherwise leaves the replicas unset so the
      * default single-SOAR overspill is used.
      */
@@ -1461,8 +1461,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             kMeansResult.assignments(),
             spannParams.replicaCount(),
             spannParams.internalResultNum(),
-            spannParams.rngFactor(),
-            spannParams.closureEpsilon(),
+            spannParams.rngFactor(), // reused as the AIR amplification lambda (RAIRS uses 0.5)
             centroidHnswM,
             centroidHnswBeamWidth
         );
@@ -1472,7 +1471,8 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
 
     /**
      * Builds per-cluster membership from the SPANN replica assignments, trimming postings that exceed
-     * {@code maxPostingFactor * vectorPerCluster} by keeping the nearest members (SPANN posting cut).
+     * {@code maxPostingFactor * vectorPerCluster} (SPANN posting cut) via {@link #trimPostingToCap} — which
+     * drops only the farthest <em>replicas</em> and never a primary, so no vector is removed from the index.
      * Returns the vector ords per cluster; the on-the-fly quantizer re-quantizes each vector against its
      * cluster centroid, so no per-replica slot bookkeeping is needed. Clears the stashed replicas.
      */
@@ -1489,9 +1489,12 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         }
         final int[][] memberOrds = new int[numCentroids][];
         final float[][] memberDists = new float[numCentroids][];
+        // per-member flag: true when this cluster is the vector's primary (replica slot 0), which must never be trimmed
+        final boolean[][] memberIsPrimary = new boolean[numCentroids][];
         for (int c = 0; c < numCentroids; c++) {
             memberOrds[c] = new int[counts[c]];
             memberDists[c] = new float[counts[c]];
+            memberIsPrimary[c] = new boolean[counts[c]];
         }
         final int[] fill = new int[numCentroids];
         for (int v = 0; v < replicas.length; v++) {
@@ -1500,6 +1503,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
                 final int c = perVector[r];
                 memberOrds[c][fill[c]] = v;
                 memberDists[c][fill[c]] = dists[v][r];
+                memberIsPrimary[c][fill[c]] = r == 0; // slot 0 is the nearest (primary) centroid
                 fill[c]++;
             }
         }
@@ -1512,22 +1516,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
         int maxPosting = 0;
         for (int c = 0; c < numCentroids; c++) {
             preTrimMembers += memberOrds[c].length;
-            if (memberOrds[c].length <= trimCap) {
-                membership[c] = memberOrds[c];
-            } else {
-                // keep the trimCap nearest members (primaries, being nearest, survive)
-                final Integer[] order = new Integer[memberOrds[c].length];
-                for (int i = 0; i < order.length; i++) {
-                    order[i] = i;
-                }
-                final float[] d = memberDists[c];
-                Arrays.sort(order, (a, b) -> Float.compare(d[a], d[b]));
-                final int[] kept = new int[trimCap];
-                for (int i = 0; i < trimCap; i++) {
-                    kept[i] = memberOrds[c][order[i]];
-                }
-                membership[c] = kept;
-            }
+            membership[c] = trimPostingToCap(memberOrds[c], memberDists[c], memberIsPrimary[c], trimCap);
             postTrimMembers += membership[c].length;
             maxPosting = Math.max(maxPosting, membership[c].length);
         }
@@ -1543,6 +1532,47 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter {
             maxPosting
         );
         return membership;
+    }
+
+    /**
+     * Trims one cluster's posting to {@code trimCap} members (SPANN posting cut), but <b>never drops a
+     * primary</b> — a primary is the vector's only guaranteed copy, so dropping it would remove the vector
+     * from the index entirely. Only the farthest replicas are removed. If the cluster has more than
+     * {@code trimCap} primaries (an imbalanced cluster), all of them are kept and the posting stays above the
+     * cap. Package-private for testing.
+     *
+     * @param ords      vector ordinals in this posting
+     * @param dists     squared distance of each member to this centroid (parallel to {@code ords})
+     * @param isPrimary whether each member is assigned here as its primary (parallel to {@code ords})
+     * @param trimCap   target maximum posting size
+     */
+    static int[] trimPostingToCap(int[] ords, float[] dists, boolean[] isPrimary, int trimCap) {
+        if (ords.length <= trimCap) {
+            return ords;
+        }
+        int primaryCount = 0;
+        for (boolean p : isPrimary) {
+            if (p) {
+                primaryCount++;
+            }
+        }
+        final Integer[] order = new Integer[ords.length];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+        }
+        // primaries first (never trimmed), then replicas by ascending distance (nearest replicas kept)
+        Arrays.sort(order, (a, b) -> {
+            if (isPrimary[a] != isPrimary[b]) {
+                return isPrimary[a] ? -1 : 1;
+            }
+            return Float.compare(dists[a], dists[b]);
+        });
+        final int keepCount = Math.max(primaryCount, trimCap);
+        final int[] kept = new int[keepCount];
+        for (int i = 0; i < keepCount; i++) {
+            kept[i] = ords[order[i]];
+        }
+        return kept;
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)

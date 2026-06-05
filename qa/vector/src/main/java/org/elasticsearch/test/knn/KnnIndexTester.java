@@ -415,8 +415,15 @@ public class KnnIndexTester {
             String indexPathName = formatIndexPath(testConfiguration);
             String indexType = testConfiguration.indexType().name().toLowerCase(Locale.ROOT);
             Results indexResults = new Results(indexPathName, indexType, testConfiguration.numDocs());
+            indexResults.replicaCount = testConfiguration.replicaCount();
+            indexResults.spannLambda = testConfiguration.rngFactor(); // rngFactor is reused as the AIR lambda
             Results[] results = new Results[testConfiguration.numberOfSearchRuns()];
-            Arrays.setAll(results, i -> new Results(indexPathName, indexType, testConfiguration.numDocs()));
+            Arrays.setAll(results, i -> {
+                Results r = new Results(indexPathName, indexType, testConfiguration.numDocs());
+                r.replicaCount = testConfiguration.replicaCount();
+                r.spannLambda = testConfiguration.rngFactor();
+                return r;
+            });
             logger.info("Running with Java: " + Runtime.version());
             logger.info("Running KNN index tester with arguments: " + testConfiguration);
             final ExecutorService exec;
@@ -741,7 +748,9 @@ public class KnnIndexTester {
                 "filter_cached",
                 "oversampling_factor",
                 "num_candidates",
-                "early_termination"
+                "early_termination",
+                "replica_count",
+                "lambda"
             );
             if (hasPartitionRecall) {
                 searchHeaderList.add("partition_recall_min");
@@ -785,7 +794,9 @@ public class KnnIndexTester {
                     Boolean.toString(queryResult.filterCached),
                     String.format(Locale.ROOT, "%.2f", queryResult.overSamplingFactor),
                     String.format(Locale.ROOT, "%d", queryResult.numCandidates),
-                    Boolean.toString(queryResult.earlyTermination)
+                    Boolean.toString(queryResult.earlyTermination),
+                    String.format(Locale.ROOT, "%d", queryResult.replicaCount),
+                    Float.isNaN(queryResult.spannLambda) ? "" : String.format(Locale.ROOT, "%.2f", queryResult.spannLambda)
                 );
                 if (hasPartitionRecall) {
                     String partitionMin = "";
@@ -885,6 +896,10 @@ public class KnnIndexTester {
         boolean earlyTermination;
         int numCandidates;
         int topK;
+        // SPANN overspill index-time params, surfaced in results so a lambda/replica sweep over a shared index
+        // path can be distinguished (the index name does not encode them).
+        int replicaCount = 1;
+        float spannLambda = Float.NaN;
         Map<String, Float> perPartitionRecall;
 
         Results(String indexName, String indexType, int numDocs) {
@@ -1018,6 +1033,8 @@ public class KnnIndexTester {
         "on_disk_rescore",
         "precondition",
         "flat_vector_threshold",
+        "replica_count",
+        "lambda",
         "top_k",
         "num_candidates",
         "visit_percentage",
@@ -1129,6 +1146,8 @@ public class KnnIndexTester {
                             Boolean.toString(config.onDiskRescore()),
                             Boolean.toString(config.doPrecondition()),
                             Integer.toString(config.flatVectorThreshold()),
+                            Integer.toString(config.replicaCount()),
+                            String.format(Locale.ROOT, "%.2f", config.rngFactor()), // AIR lambda (rngFactor reused)
                             Integer.toString(sp.topK()),
                             Integer.toString(sp.numCandidates()),
                             String.format(Locale.ROOT, "%.4f", sp.visitPercentage()),

@@ -17,11 +17,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Unit tests for the experiment-only SPANN multi-replica overspill assigner. */
+/** Unit tests for the experiment-only SPANN multi-replica overspill assigner (AIR/SRAIR selection). */
 public class SpannOverspillTests extends ESTestCase {
 
     private static final int M = 16;
     private static final int BEAM_WIDTH = 100;
+    private static final float LAMBDA = 0.5f; // RAIRS default AIR amplification
 
     /** Builds the nearest-centroid (primary) assignment by brute force, matching what clustering produces. */
     private static int[] primaryAssignment(List<float[]> vectors, float[][] centroids) {
@@ -51,7 +52,7 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 1, 64, 1.0f, -1f, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 1, 64, LAMBDA, M, BEAM_WIDTH);
         for (int v = 0; v < numVectors; v++) {
             assertEquals("vector " + v + " should have a single replica", 1, replicas.centroidsPerVector()[v].length);
             assertEquals(primary[v], replicas.centroidsPerVector()[v][0]);
@@ -59,7 +60,7 @@ public class SpannOverspillTests extends ESTestCase {
         }
     }
 
-    /** Primary is always replica 0, counts never exceed replicaCount, and replicas are distinct. */
+    /** Primary is always replica 0, counts never exceed replicaCount, replicas are distinct, distances are true. */
     public void testPrimaryFirstAndBounded() throws IOException {
         int dim = 16;
         int numCentroids = 64;
@@ -70,17 +71,7 @@ public class SpannOverspillTests extends ESTestCase {
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(
-            values,
-            centroids,
-            primary,
-            replicaCount,
-            64,
-            1.0f,
-            -1f, // closure disabled
-            M,
-            BEAM_WIDTH
-        );
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, replicaCount, 64, LAMBDA, M, BEAM_WIDTH);
 
         for (int v = 0; v < numVectors; v++) {
             int[] r = replicas.centroidsPerVector()[v];
@@ -89,72 +80,110 @@ public class SpannOverspillTests extends ESTestCase {
             assertTrue("bounded by replicaCount", r.length <= replicaCount);
             assertEquals("distances parallel to replicas", r.length, d.length);
             assertEquals("primary kept first", primary[v], r[0]);
-            // distinct centroids
             for (int i = 0; i < r.length; i++) {
                 for (int j = i + 1; j < r.length; j++) {
                     assertNotEquals("replica centroids must be distinct", r[i], r[j]);
                 }
-                // distances are the true squared distance to the assigned centroid
+                // distances are the (squared) distance to the assigned centroid
                 assertEquals(ESVectorUtil.squareDistance(vectors.get(v), centroids[r[i]]), d[i], 1e-3f);
             }
         }
     }
 
-    /** A tight closure bound must keep every secondary replica within (1+eps)^2 of the primary distance. */
-    public void testClosureBoundRespected() throws IOException {
+    /**
+     * Every kept secondary must satisfy the SRAIR gate: its AIR loss (with max-aggregation over the residuals
+     * kept before it) is strictly below {@code (1+lambda) * ||r_primary||^2}. Recomputed from the returned
+     * distances + inter-centroid geometry, exactly as {@link SpannOverspill#assign} does.
+     */
+    public void testKeptReplicasSatisfySrairGate() throws IOException {
         int dim = 16;
         int numCentroids = 64;
         int numVectors = 512;
-        float epsilon = 0.1f;
         float[][] centroids = randomCentroids(numCentroids, dim);
         List<float[]> vectors = randomVectors(numVectors, dim);
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
 
-        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, 1.0f, epsilon, M, BEAM_WIDTH);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
 
-        float multiplier = (1f + epsilon) * (1f + epsilon);
         for (int v = 0; v < numVectors; v++) {
+            int[] r = replicas.centroidsPerVector()[v];
             float[] d = replicas.sqDistPerVector()[v];
-            float primarySq = d[0];
-            for (int i = 1; i < d.length; i++) {
+            float threshold = (1f + LAMBDA) * d[0]; // (1+lambda) * ||r_primary||^2
+            for (int i = 1; i < r.length; i++) {
+                float maxDot = -Float.MAX_VALUE;
+                for (int k = 0; k < i; k++) {
+                    float interSq = ESVectorUtil.squareDistance(centroids[r[k]], centroids[r[i]]);
+                    float dot = 0.5f * (d[k] + d[i] - interSq); // r_k . r_i
+                    maxDot = Math.max(maxDot, dot);
+                }
+                float airLoss = d[i] + LAMBDA * maxDot;
                 assertTrue(
-                    "replica " + i + " of vector " + v + " (" + d[i] + ") exceeds closure bound " + (primarySq * multiplier),
-                    d[i] <= primarySq * multiplier + 1e-3f
+                    "kept replica " + i + " of vector " + v + " violates SRAIR gate: loss=" + airLoss + " threshold=" + threshold,
+                    airLoss < threshold + 1e-3f
                 );
             }
         }
     }
 
     /**
-     * The RNG rule mirrors Vamana's robust-prune ({@code factor * d(cand, kept) < d(vector, cand)} → reject):
-     * a larger factor relaxes pruning, so it never produces fewer replicas than a smaller one.
+     * A vector sitting on a centroid (deep in its cell, every other centroid far away) gains nothing from a
+     * secondary, so SRAIR keeps only the primary regardless of replicaCount.
      */
-    public void testRngFactorMonotonicity() throws IOException {
-        int dim = 16;
-        int numCentroids = 64;
-        int numVectors = 512;
-        float[][] centroids = randomCentroids(numCentroids, dim);
-        List<float[]> vectors = randomVectors(numVectors, dim);
+    public void testDeepVectorKeepsOnlyPrimary() throws IOException {
+        int dim = 8;
+        int numCentroids = 24;
+        float spacing = 100f; // centroids far apart so non-primary candidates are far
+        float[][] centroids = new float[numCentroids][dim];
+        for (int c = 0; c < numCentroids; c++) {
+            for (int d = 0; d < dim; d++) {
+                centroids[c][d] = c * spacing + randomFloat();
+            }
+        }
+        // vector sits exactly on centroid 7 -> primarySq ~ 0 -> SRAIR threshold ~ 0 -> no secondary can pass
+        List<float[]> vectors = new ArrayList<>();
+        vectors.add(centroids[7].clone());
+        FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
+        int[] primary = new int[] { 7 };
+
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
+        assertEquals("deep vector must keep only its primary", 1, replicas.centroidsPerVector()[0].length);
+        assertEquals(7, replicas.centroidsPerVector()[0][0]);
+    }
+
+    /**
+     * A boundary vector lying between its primary and a neighbouring centroid is replicated into that neighbour,
+     * and AIR selects the opposite-side neighbour (residual pointing opposite to the primary residual, i.e. a
+     * negative dot product) — the centroid a boundary-crossing query would route to.
+     */
+    public void testBoundaryVectorGetsOppositeSideReplica() throws IOException {
+        int dim = 8;
+        int numCentroids = 20;
+        float[][] centroids = new float[numCentroids][dim];
+        // c0 and c1 straddle the vector along axis 0; all other centroids are pushed far away
+        centroids[0][0] = 0f;
+        centroids[1][0] = 10f;
+        for (int c = 2; c < numCentroids; c++) {
+            for (int d = 0; d < dim; d++) {
+                centroids[c][d] = 500f + c * 50f + randomFloat();
+            }
+        }
+        float[] x = new float[dim];
+        x[0] = 4.5f; // nearest to c0 (dist 4.5), c1 is the opposite-side neighbour (dist 5.5)
+        List<float[]> vectors = List.of(x);
         FloatVectorValues values = FloatVectorValues.fromFloats(vectors, dim);
         int[] primary = primaryAssignment(vectors, centroids);
+        assertEquals("primary should be c0", 0, primary[0]);
 
-        SpannOverspill.Replicas strict = SpannOverspill.assign(values, centroids, primary, 6, 64, 1.0f, -1f, M, BEAM_WIDTH);
-        SpannOverspill.Replicas loose = SpannOverspill.assign(values, centroids, primary, 6, 64, 10.0f, -1f, M, BEAM_WIDTH);
-
-        long looseTotal = 0;
-        long strictTotal = 0;
-        for (int v = 0; v < numVectors; v++) {
-            looseTotal += loose.centroidsPerVector()[v].length;
-            strictTotal += strict.centroidsPerVector()[v].length;
-            assertTrue(
-                "looser RNG should not drop replicas for vector " + v,
-                loose.centroidsPerVector()[v].length >= strict.centroidsPerVector()[v].length
-            );
-        }
-        // overspill should actually be happening with the loose factor
-        assertTrue("loose RNG should assign some secondary replicas", looseTotal > numVectors);
-        assertTrue(strictTotal <= looseTotal);
+        SpannOverspill.Replicas replicas = SpannOverspill.assign(values, centroids, primary, 6, 64, LAMBDA, M, BEAM_WIDTH);
+        int[] r = replicas.centroidsPerVector()[0];
+        assertTrue("boundary vector should get a secondary replica", r.length >= 2);
+        assertEquals("primary first", 0, r[0]);
+        assertEquals("secondary is the opposite-side neighbour c1", 1, r[1]);
+        // r0 . r1 < 0 confirms AIR picked an inverse (opposite-direction) residual
+        float interSq = ESVectorUtil.squareDistance(centroids[0], centroids[1]);
+        float dot = 0.5f * (ESVectorUtil.squareDistance(centroids[0], x) + ESVectorUtil.squareDistance(centroids[1], x) - interSq);
+        assertTrue("secondary residual should oppose the primary residual (dot < 0), got " + dot, dot < 0f);
     }
 
     private static float[][] randomCentroids(int n, int dim) {

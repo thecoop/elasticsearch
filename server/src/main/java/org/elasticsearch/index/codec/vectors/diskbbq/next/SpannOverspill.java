@@ -25,17 +25,20 @@ import java.io.IOException;
 import java.util.Arrays;
 
 /**
- * Experiment-only SPANN-style multi-cluster assignment ("overspill"). Following SPANN, each vector is
- * assigned to up to {@code replicaCount} nearby centroids ("postings") instead of just one (the current
- * SOAR does a single secondary). The centroid HNSW graph is used as SPANN's <em>head index</em>: for each
- * vector we graph-search its nearest centroids and accept a diverse subset using the RNG rule
- * ({@code rngFactor * d(cand, kept) < d(vector, cand)} → reject), optionally bounded by a closure
- * condition ({@code d(vector, cand) <= (1+epsilon) * d(vector, primary)}). The primary (nearest) centroid
- * is always kept first. Membership trimming of overfull postings is applied later by the writer using the
- * returned per-replica distances.
+ * Experiment-only SPANN-style multi-cluster assignment ("overspill"). Each vector is assigned to up to
+ * {@code replicaCount} nearby centroids ("postings") instead of just one. The centroid HNSW graph is used as
+ * SPANN's <em>head index</em>: we graph-search each vector's nearest centroids, then select secondaries with
+ * the RAIRS <b>AIR</b> (Amplified Inverse Residual) metric gated by <b>SRAIR</b>. AIR is the Euclidean
+ * counterpart to SOAR's orthogonal-residual rule (SOAR targets inner product): it prefers a secondary residual
+ * pointing <em>opposite</em> to the primary residual — the far side of the vector — which is exactly where a
+ * boundary query routes. SRAIR keeps a candidate only when its AIR loss beats re-using the primary, so
+ * deep-in-cluster vectors stay single-assigned. Candidates are considered nearest-first and every one passing
+ * the gate is kept (up to {@code replicaCount}); the primary (nearest) centroid is always kept first.
+ * Membership trimming of overfull postings is applied later by the writer using the returned per-replica
+ * distances.
  *
  * <p>Distances are squared L2 (matching the existing SOAR/neighbourhood code); for cosine/MIP the vectors
- * are unit-normalised so L2 ordering matches.
+ * are unit-normalised so L2 ordering matches. See RAIRS (Yang &amp; Chen, SIGMOD 2026).
  */
 public final class SpannOverspill {
 
@@ -46,8 +49,8 @@ public final class SpannOverspill {
      *
      * @param replicaCount       max centroids a vector may be assigned to ({@code <=1} disables overspill)
      * @param internalResultNum  number of nearest centroids considered per vector (head-index search depth)
-     * @param rngFactor          RNG diversity strength ({@code 1.0} = SPANN default)
-     * @param closureEpsilon     closure bound; candidates with {@code d > (1+eps)*d(primary)} are dropped ({@code <0} disables)
+     * @param rngFactor          reused as the AIR amplification λ (RAIRS uses 0.5); larger favours opposite-side replicas
+     * @param closureEpsilon     unused (AIR/SRAIR has no closure bound); retained for tester compatibility
      * @param maxPostingFactor   trim postings larger than {@code maxPostingFactor * vectorsPerCluster} ({@code <=0} disables)
      */
     public record Params(int replicaCount, int internalResultNum, float rngFactor, float closureEpsilon, float maxPostingFactor) {
@@ -62,9 +65,17 @@ public final class SpannOverspill {
     record Replicas(int[][] centroidsPerVector, float[][] sqDistPerVector) {}
 
     /**
-     * Assigns up to {@code replicaCount} centroids per vector via centroid-graph search + RNG diversity.
+     * Assigns up to {@code replicaCount} centroids per vector via centroid-graph search + AIR/SRAIR selection
+     * (Euclidean redundant assignment, RAIRS-style). For each near candidate {@code c'} (residual r' = c' - x)
+     * the AIR loss {@code ||r'||^2 + lambda * max_i(r_i . r')} is computed against the already-kept residuals
+     * r_i; the {@code +lambda r.r'} term favours a residual <em>opposite</em> to the kept ones (the far side of
+     * x), which boundary queries route to. The SRAIR gate keeps a candidate only when its loss beats re-using
+     * the primary ({@code (1+lambda)*||r_primary||^2}), so deep-in-cluster vectors stay single-assigned. The
+     * dot {@code r_i . r'} is recovered from squared distances via
+     * {@code r_i . r' = (||r_i||^2 + ||r'||^2 - ||c_i - c'||^2) / 2}, so no full-vector dot products are needed.
      *
      * @param primary the primary (nearest) centroid per vector; always kept as replica 0
+     * @param lambda  AIR amplification (RAIRS uses 0.5); larger favours opposite-side replicas more strongly
      */
     static Replicas assign(
         FloatVectorValues vectors,
@@ -72,8 +83,7 @@ public final class SpannOverspill {
         int[] primary,
         int replicaCount,
         int internalResultNum,
-        float rngFactor,
-        float closureEpsilon,
+        float lambda,
         int m,
         int beamWidth
     ) throws IOException {
@@ -91,11 +101,8 @@ public final class SpannOverspill {
         }
         final OnHeapHnswGraph graph = HnswGraphBuilder.create(new CentroidScorerSupplier(centroids), m, beamWidth, 42L, centroids.length)
             .build(centroids.length);
-        // closureEpsilon < 0 disables the closure bound; otherwise (1+eps)^2 is applied to squared distances
-        final boolean closureEnabled = closureEpsilon >= 0f;
-        final float closureMultiplier = (1f + closureEpsilon) * (1f + closureEpsilon);
         final int[] kept = new int[replicaCount];
-        final float[] keptDist = new float[replicaCount];
+        final float[] keptDist = new float[replicaCount]; // ||r_i||^2 : squared distance from the vector to kept centroid i
         for (int v = 0; v < n; v++) {
             final float[] vector = vectors.vectorValue(v);
             final int prim = primary[v];
@@ -109,24 +116,25 @@ public final class SpannOverspill {
             final TopKnnCollector collector = new TopKnnCollector(internalResultNum, Integer.MAX_VALUE);
             HnswGraphSearcher.search(scorer, collector, graph, null);
             final ScoreDoc[] candidates = collector.topDocs().scoreDocs;
-            final float closureThreshold = primarySq * closureMultiplier;
+            // SRAIR gate: a secondary is only worthwhile if its AIR loss beats re-using the primary.
+            final float srairThreshold = (1f + lambda) * primarySq;
             for (int ci = 0; ci < candidates.length && count < replicaCount; ci++) {
                 final int candidate = candidates[ci].doc;
                 if (candidate == prim) {
                     continue;
                 }
-                final float candidateSq = ESVectorUtil.squareDistance(vector, centroids[candidate]);
-                if (closureEnabled && candidateSq > closureThreshold) {
-                    break; // candidates are nearest-first, so everything after is also outside the closure
-                }
-                boolean rngAccepted = true;
+                final float candidateSq = 1f / candidates[ci].score - 1f; // ||r'||^2, inverting the normalized score
+                // AIR with max-aggregation: penalise alignment with the most-aligned already-kept residual.
+                float maxDot = -Float.MAX_VALUE;
                 for (int k = 0; k < count; k++) {
-                    if (rngFactor * ESVectorUtil.squareDistance(centroids[candidate], centroids[kept[k]]) < candidateSq) {
-                        rngAccepted = false; // too close to an already-kept centroid -> redundant direction
-                        break;
+                    final float interSq = ESVectorUtil.squareDistance(centroids[kept[k]], centroids[candidate]);
+                    final float dot = 0.5f * (keptDist[k] + candidateSq - interSq); // r_k . r'
+                    if (dot > maxDot) {
+                        maxDot = dot;
                     }
                 }
-                if (rngAccepted) {
+                final float airLoss = candidateSq + lambda * maxDot;
+                if (airLoss < srairThreshold) {
                     kept[count] = candidate;
                     keptDist[count] = candidateSq;
                     count++;
