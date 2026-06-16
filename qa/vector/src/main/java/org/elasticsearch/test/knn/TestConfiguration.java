@@ -79,6 +79,7 @@ public record TestConfiguration(
     int preconditioningBlockDims,
     int flatVectorThreshold,
     int secondaryClusterSize,
+    boolean autoCalibrate,
     // Experiment-only IVF centroid HNSW graph knobs (see ESNextDiskBBQVectorsFormat#indexCentroidsInGraph)
     boolean indexCentroidsInGraph,
     int centroidHnswM,
@@ -133,6 +134,7 @@ public record TestConfiguration(
     static final ParseField FILTER_CACHED = new ParseField("filter_cache");
     static final ParseField SEARCH_PARAMS = new ParseField("search_params");
     static final ParseField FLAT_VECTOR_THRESHOLD = new ParseField("flat_vector_threshold");
+    static final ParseField AUTO_CALIBRATE_FIELD = new ParseField("auto_calibrate");
     static final ParseField INDEX_CENTROIDS_IN_GRAPH = new ParseField("index_centroids_in_graph");
     static final ParseField CENTROID_HNSW_M = new ParseField("centroid_hnsw_m");
     static final ParseField CENTROID_HNSW_BEAM_WIDTH = new ParseField("centroid_hnsw_beam_width");
@@ -213,6 +215,7 @@ public record TestConfiguration(
         PARSER.declareInt(Builder::setMergeWorkers, MERGE_WORKERS_FIELD);
         PARSER.declareInt(Builder::setFlatVectorThreshold, FLAT_VECTOR_THRESHOLD);
         PARSER.declareInt(Builder::setSecondaryClusterSize, SECONDARY_CLUSTER_SIZE);
+        PARSER.declareBoolean(Builder::setAutoCalibrate, AUTO_CALIBRATE_FIELD);
         PARSER.declareBoolean(Builder::setIndexCentroidsInGraph, INDEX_CENTROIDS_IN_GRAPH);
         PARSER.declareInt(Builder::setCentroidHnswM, CENTROID_HNSW_M);
         PARSER.declareInt(Builder::setCentroidHnswBeamWidth, CENTROID_HNSW_BEAM_WIDTH);
@@ -284,6 +287,12 @@ public record TestConfiguration(
             new ParameterHelp("on_disk_rescore", "boolean", "Search: enable on-disk rescore for search."),
             new ParameterHelp("precondition", "boolean", "IVF: apply preconditioning prior to indexing."),
             new ParameterHelp("preconditioning_block_dims", "int", "IVF: block dimensions used for preconditioning."),
+            new ParameterHelp(
+                "auto_calibrate",
+                "boolean",
+                "ivf only: enable per-segment manifold calibration on merge (experimental; "
+                    + "requires sufficient vectors per segment for calibration to take effect)."
+            ),
             new ParameterHelp("num_candidates", "array[int]", "HNSW: number of candidates (efSearch) to consider per query."),
             new ParameterHelp("k", "array[int]", "Search: top K results to return."),
             new ParameterHelp("visit_percentage", "array[double]", "IVF: percentage of IVF index to visit (0.0-100.0)."),
@@ -447,6 +456,7 @@ public record TestConfiguration(
         private int numMergeWorkers = 1;
         private int flatVectorThreshold = -1; // -1 mean use default (vectorPerCluster * 3)
         private int secondaryClusterSize = -1;
+        private boolean autoCalibrate = false;
         private int flatIndexThreshold = -1; // use format's default threshold
         private boolean indexCentroidsInGraph = false;
         private int centroidHnswM = ESNextDiskBBQVectorsFormat.DEFAULT_CENTROID_HNSW_M;
@@ -670,6 +680,11 @@ public record TestConfiguration(
 
         public Builder setSecondaryClusterSize(int secondaryClusterSize) {
             this.secondaryClusterSize = secondaryClusterSize;
+            return this;
+        }
+
+        public Builder setAutoCalibrate(boolean autoCalibrate) {
+            this.autoCalibrate = autoCalibrate;
             return this;
         }
 
@@ -932,6 +947,9 @@ public record TestConfiguration(
             if (vectorSpace == VectorSimilarityFunction.COSINE && vectorEncoding == KnnIndexTester.VectorEncoding.BYTE) {
                 KnnIndexTester.logger.info("vector_space=cosine with byte vectors: using cosine directly (no normalization)");
             }
+            if (autoCalibrate && indexType != KnnIndexTester.IndexType.IVF) {
+                throw new IllegalArgumentException("auto_calibrate is only supported when index_type is ivf");
+            }
 
             // length of the longest array parameter
             int longestParam = longestParameter();
@@ -998,6 +1016,7 @@ public record TestConfiguration(
                 preconditioningBlockDims,
                 flatVectorThreshold,
                 secondaryClusterSize,
+                autoCalibrate,
                 indexCentroidsInGraph,
                 centroidHnswM,
                 centroidHnswBeamWidth,
@@ -1069,6 +1088,7 @@ public record TestConfiguration(
                 builder.field(SEARCH_PARAMS.getPreferredName(), searchParams);
             }
             builder.field(FLAT_VECTOR_THRESHOLD.getPreferredName(), flatVectorThreshold);
+            builder.field(AUTO_CALIBRATE_FIELD.getPreferredName(), autoCalibrate);
             builder.field(INDEX_CENTROIDS_IN_GRAPH.getPreferredName(), indexCentroidsInGraph);
             builder.field(CENTROID_HNSW_M.getPreferredName(), centroidHnswM);
             builder.field(CENTROID_HNSW_BEAM_WIDTH.getPreferredName(), centroidHnswBeamWidth);
