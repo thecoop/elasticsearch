@@ -250,6 +250,9 @@ public class ESNextDiskBBQVectorsReader extends IVFVectorsReader<ESNextDiskBBQVe
         HnswGraphSearcher.search(scorer, collector, graph, acceptCentroids);
         final ScoreDoc[] scoreDocs = collector.topDocs().scoreDocs;
         final long postingTableOffset = fieldEntry.graphPostingTableOffset;
+        // TODO making this be able to iterate more, this means keeping track of the last returned, and then going back to the graph
+        // with a seeded searcher (entry point being the last returned centroid), this obviously means we need to keep track of the returned
+        // centroids and filter those out!!! (YAY for acceptCentroids!!!!).
         return new CentroidIterator() {
             private int index = 0;
 

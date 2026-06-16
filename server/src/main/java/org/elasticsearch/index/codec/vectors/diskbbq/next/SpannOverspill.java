@@ -109,6 +109,7 @@ public final class SpannOverspill {
         // the centroids a query would route to. SOAR (orthogonal residual) is the inner-product rule; AIR
         // (inverse residual) is the Euclidean/cosine rule. Residuals themselves are always Euclidean.
         final boolean useSoar = similarity == VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
+        // TODO don't build the dang graph again...
         final OnHeapHnswGraph graph = HnswGraphBuilder.create(
             new CentroidScorerSupplier(centroids, similarity),
             m,
@@ -164,6 +165,7 @@ public final class SpannOverspill {
             replicas[v] = Arrays.copyOf(kept, count);
             dists[v] = Arrays.copyOf(keptDist, count);
         }
+        // TODO note, we only trim the replicas.
         return new Replicas(replicas, dists);
     }
 

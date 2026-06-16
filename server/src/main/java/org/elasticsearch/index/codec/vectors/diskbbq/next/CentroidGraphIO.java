@@ -50,6 +50,7 @@ import java.util.Random;
  *     [VInt arcCount][delta-encoded sorted neighbour ords ...] ]
  * </pre>
  */
+// TODO this uses a metric ton of heap...can we make it cheaper?
 final class CentroidGraphIO {
 
     private CentroidGraphIO() {}
