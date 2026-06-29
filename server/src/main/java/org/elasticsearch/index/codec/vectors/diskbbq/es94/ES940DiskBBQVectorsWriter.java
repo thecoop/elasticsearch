@@ -392,9 +392,11 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
                     centroid
                 );
                 if (parentCentroid != null) {
-                    float additionalCorrection = vectorSimilarityFunction == VectorSimilarityFunction.EUCLIDEAN
-                        ? ESVectorUtil.squareDistance(vector, parentCentroid)
-                        : ESVectorUtil.dotProduct(scratch, parentCentroid);
+                    float additionalCorrection = switch (vectorSimilarityFunction) {
+                        case DOT_PRODUCT -> ESVectorUtil.dotProduct(scratch, parentCentroid);
+                        case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, parentCentroid);
+                        default -> throw new AssertionError(vectorSimilarityFunction);
+                    };
                     result = new OptimizedScalarQuantizer.QuantizationResult(
                         result.lowerInterval(),
                         result.upperInterval(),
@@ -413,9 +415,11 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
                     // write the overspill vector as well
                     result = quantizer.scalarQuantize(vector, scratch, quantized, quantEncoding.bits(), overspillCentroid);
                     if (overspillParentCentroid != null) {
-                        float additionalCorrection = vectorSimilarityFunction == VectorSimilarityFunction.EUCLIDEAN
-                            ? ESVectorUtil.squareDistance(vector, overspillParentCentroid)
-                            : ESVectorUtil.dotProduct(scratch, overspillParentCentroid);
+                        float additionalCorrection = switch (vectorSimilarityFunction) {
+                            case DOT_PRODUCT -> ESVectorUtil.dotProduct(scratch, overspillParentCentroid);
+                            case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, overspillParentCentroid);
+                            default -> throw new AssertionError(vectorSimilarityFunction);
+                        };
                         result = new OptimizedScalarQuantizer.QuantizationResult(
                             result.lowerInterval(),
                             result.upperInterval(),
@@ -1020,9 +1024,11 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
             corrections = quantizer.scalarQuantize(vector, floatVectorScratch, quantizedVectorScratch, encoding.bits(), currentCentroid);
             // note, with a parent centroid, our correction needs to take it into account
             if (currentParentCentroid != null) {
-                float additionalCorrection = similarityFunction == VectorSimilarityFunction.EUCLIDEAN
-                    ? ESVectorUtil.squareDistance(vector, currentParentCentroid)
-                    : ESVectorUtil.dotProduct(floatVectorScratch, currentParentCentroid);
+                float additionalCorrection = switch (similarityFunction) {
+                    case DOT_PRODUCT -> ESVectorUtil.dotProduct(floatVectorScratch, currentParentCentroid);
+                    case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, currentParentCentroid);
+                    default -> throw new AssertionError(similarityFunction);
+                };
                 corrections = new OptimizedScalarQuantizer.QuantizationResult(
                     corrections.lowerInterval(),
                     corrections.upperInterval(),
