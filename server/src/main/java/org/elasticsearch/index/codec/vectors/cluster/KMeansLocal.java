@@ -11,7 +11,6 @@ package org.elasticsearch.index.codec.vectors.cluster;
 
 import org.apache.lucene.search.TaskExecutor;
 import org.apache.lucene.util.FixedBitSet;
-import org.apache.lucene.util.hnsw.IntToIntFunction;
 import org.elasticsearch.index.codec.vectors.diskbbq.SoarAssignments;
 
 import java.io.IOException;
@@ -20,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.function.IntUnaryOperator;
 
 /**
  * k-means implementation specific to the needs of the {@link HierarchicalKMeans} algorithm that deals specifically
@@ -81,7 +81,7 @@ abstract class KMeansLocal<V> {
     protected static <V> boolean stepLloydSlice(
         ClusteringVectorValues<V> vectors,
         CentroidOps<V> ops,
-        IntToIntFunction ordTranslator,
+        IntUnaryOperator ordTranslator,
         V[] centroids,
         FixedBitSet centroidChanged,
         int[] assignments,
@@ -112,7 +112,7 @@ abstract class KMeansLocal<V> {
         int numWorkers,
         ClusteringVectorValues<V> vectors,
         CentroidOps<V> ops,
-        IntToIntFunction ordTranslator,
+        IntUnaryOperator ordTranslator,
         V[] centroids,
         FixedBitSet[] centroidChangedSlices,
         int[] assignments,

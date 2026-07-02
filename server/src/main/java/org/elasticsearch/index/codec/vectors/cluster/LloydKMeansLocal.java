@@ -10,10 +10,10 @@
 package org.elasticsearch.index.codec.vectors.cluster;
 
 import org.apache.lucene.util.FixedBitSet;
-import org.apache.lucene.util.hnsw.IntToIntFunction;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.function.IntUnaryOperator;
 
 /**
  * k-means implementation specific to the needs of the {@link HierarchicalKMeans} algorithm that deals specifically
@@ -39,7 +39,7 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
     /** assign to each vector the closest centroid */
     protected abstract boolean stepLloyd(
         ClusteringVectorValues<V> vectors,
-        IntToIntFunction translateOrd,
+        IntUnaryOperator translateOrd,
         V[] centroids,
         FixedBitSet[] centroidChangedSlices,
         int[] assignments,
@@ -69,7 +69,7 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
             Arrays.fill(assignments, 0);
             return;
         }
-        IntToIntFunction ordTranslator = i -> i;
+        IntUnaryOperator ordTranslator = IntUnaryOperator.identity();
         ClusteringVectorValues<V> sampledVectors = vectors;
         if (sampleSize < n) {
             sampledVectors = ClusteringVectorValuesSlice.createRandomSlice(vectors, sampleSize, 42L);
@@ -102,7 +102,7 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
         // If we were sampled, do a once over the full set of vectors to finalize the centroids
         if (sampleSize < n || maxIterations == 0) {
             // No ordinal translation needed here, we are using the full set of vectors
-            if (stepLloyd(vectors, i -> i, centroids, centroidChangedSlices, assignments, neighborhoods)) {
+            if (stepLloyd(vectors, IntUnaryOperator.identity(), centroids, centroidChangedSlices, assignments, neighborhoods)) {
                 CentroidAssignment.updateCentroids(
                     sampledVectors,
                     centroids,

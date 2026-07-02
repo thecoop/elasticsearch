@@ -10,11 +10,11 @@
 package org.elasticsearch.index.codec.vectors.cluster;
 
 import org.apache.lucene.util.FixedBitSet;
-import org.apache.lucene.util.hnsw.IntToIntFunction;
 import org.elasticsearch.simdvec.ESVectorUtil;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.function.IntUnaryOperator;
 
 /**
  * Balanced k-means algorithm that uses a mini-batch approach with an L2 regularization over the cluster sizes.
@@ -57,7 +57,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
     private void computeDistances(
         ClusteringVectorValues<V> vectors,
         V[] centroids,
-        IntToIntFunction assigner,
+        IntUnaryOperator assigner,
         NeighborHood[] neighborhoods,
         float[][] distances
     ) throws IOException {
@@ -81,7 +81,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
         float[][] distances,
         float[] cumulativeClusterWeights,
         float weightClusterSizes,
-        IntToIntFunction assigner,
+        IntUnaryOperator assigner,
         NeighborHood[] neighborhoods,
         int[] localAssignments
     ) {
@@ -92,7 +92,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
             }
         } else {
             for (int i = 0; i < distances.length; i++) {
-                final int previouslySelected = assigner.apply(i);
+                final int previouslySelected = assigner.applyAsInt(i);
                 int[] neighbors = neighborhoods[previouslySelected].neighbors();
 
                 distances[i][0] += weightClusterSizes * cumulativeClusterWeights[previouslySelected];
@@ -150,7 +150,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
     /** assign to each vector the closest centroid */
     protected abstract void assign(
         ClusteringVectorValues<V> vectors,
-        IntToIntFunction ordTranslator,
+        IntUnaryOperator ordTranslator,
         V[] centroids,
         FixedBitSet[] centroidChangedSlices,
         int[] assignments,
@@ -213,7 +213,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
                         miniBatchSamples
                     );
 
-                    IntToIntFunction assigner = i -> {
+                    IntUnaryOperator assigner = i -> {
                         final int translatedOrd = sampledVectors.ordToDoc(i);
                         return assignments[translatedOrd];
                     };
@@ -255,14 +255,14 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
             centroidChangedSlices[i] = new FixedBitSet(centroids.length);
         }
 
-        assign(vectors, i -> i, centroids, centroidChangedSlices, assignments, neighborhoods);
+        assign(vectors, IntUnaryOperator.identity(), centroids, centroidChangedSlices, assignments, neighborhoods);
 
         int[] centroidCounts = new int[centroids.length];
         CentroidOps.AccumulatorState<V> accumulatorState = ops.newAccumulatorState(centroids, centroids.length, vectors.dimension());
         CentroidAssignment.updateCentroids(
             vectors,
             centroids,
-            i -> i,
+            IntUnaryOperator.identity(),
             centroidChangedSlices,
             centroidCounts,
             assignments,

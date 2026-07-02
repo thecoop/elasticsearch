@@ -10,10 +10,10 @@
 package org.elasticsearch.index.codec.vectors.cluster;
 
 import org.apache.lucene.util.FixedBitSet;
-import org.apache.lucene.util.hnsw.IntToIntFunction;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.function.IntUnaryOperator;
 
 /**
  * Balanced k-means algorithm that uses a mini-batch approach with OT-based balancing on each mini-batch.
@@ -105,7 +105,7 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
     /** assign to each vector the closest centroid */
     protected abstract void assign(
         ClusteringVectorValues<V> vectors,
-        IntToIntFunction ordTranslator,
+        IntUnaryOperator ordTranslator,
         V[] centroids,
         FixedBitSet[] centroidChangedSlices,
         int[] assignments,
@@ -211,13 +211,13 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
             centroidChangedSlices[i] = new FixedBitSet(centroids.length);
         }
 
-        assign(vectors, i -> i, centroids, centroidChangedSlices, assignments, neighborhoods);
+        assign(vectors, IntUnaryOperator.identity(), centroids, centroidChangedSlices, assignments, neighborhoods);
         int[] centroidCounts = new int[centroids.length];
         CentroidOps.AccumulatorState<V> accumulatorState = ops.newAccumulatorState(centroids, centroids.length, vectors.dimension());
         CentroidAssignment.updateCentroids(
             vectors,
             centroids,
-            i -> i,
+            IntUnaryOperator.identity(),
             centroidChangedSlices,
             centroidCounts,
             assignments,
