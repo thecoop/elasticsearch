@@ -393,8 +393,8 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
                 );
                 if (parentCentroid != null) {
                     float additionalCorrection = switch (vectorSimilarityFunction) {
-                        case DOT_PRODUCT -> ESVectorUtil.dotProduct(scratch, parentCentroid);
                         case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, parentCentroid);
+                        case DOT_PRODUCT, MAXIMUM_INNER_PRODUCT -> ESVectorUtil.dotProduct(scratch, parentCentroid);
                         default -> throw new AssertionError(vectorSimilarityFunction);
                     };
                     result = new OptimizedScalarQuantizer.QuantizationResult(
@@ -416,8 +416,8 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
                     result = quantizer.scalarQuantize(vector, scratch, quantized, quantEncoding.bits(), overspillCentroid);
                     if (overspillParentCentroid != null) {
                         float additionalCorrection = switch (vectorSimilarityFunction) {
-                            case DOT_PRODUCT -> ESVectorUtil.dotProduct(scratch, overspillParentCentroid);
                             case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, overspillParentCentroid);
+                            case DOT_PRODUCT, MAXIMUM_INNER_PRODUCT -> ESVectorUtil.dotProduct(scratch, overspillParentCentroid);
                             default -> throw new AssertionError(vectorSimilarityFunction);
                         };
                         result = new OptimizedScalarQuantizer.QuantizationResult(
@@ -1025,8 +1025,8 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter {
             // note, with a parent centroid, our correction needs to take it into account
             if (currentParentCentroid != null) {
                 float additionalCorrection = switch (similarityFunction) {
-                    case DOT_PRODUCT -> ESVectorUtil.dotProduct(floatVectorScratch, currentParentCentroid);
                     case EUCLIDEAN -> ESVectorUtil.squareDistance(vector, currentParentCentroid);
+                    case DOT_PRODUCT, MAXIMUM_INNER_PRODUCT -> ESVectorUtil.dotProduct(floatVectorScratch, currentParentCentroid);
                     default -> throw new AssertionError(similarityFunction);
                 };
                 corrections = new OptimizedScalarQuantizer.QuantizationResult(
