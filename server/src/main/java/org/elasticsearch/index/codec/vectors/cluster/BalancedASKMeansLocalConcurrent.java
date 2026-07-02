@@ -75,11 +75,11 @@ class BalancedASKMeansLocalConcurrent<V> extends BalancedASKMeansLocal<V> {
     @Override
     protected int[] assignSpilled(
         ClusteringVectorValues<V> vectors,
-        KMeansIntermediate<V> kmeansIntermediate,
+        KMeansResult<V> kmeansResult,
         NeighborHood[] neighborhoods,
         float soarLambda
     ) throws IOException {
-        return assignSpilledConcurrent(executor, numWorkers, vectors, ops, kmeansIntermediate, neighborhoods, soarLambda);
+        return assignSpilledConcurrent(executor, numWorkers, vectors, ops, kmeansResult, neighborhoods, soarLambda);
     }
 
     @Override

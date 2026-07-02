@@ -29,10 +29,6 @@ class KMeansIntermediate<V> extends KMeansResult<V> {
         return new KMeansIntermediate<>(ops.newCentroidArray(0, 0), new int[0], IntUnaryOperator.identity());
     }
 
-    KMeansIntermediate(V[] centroids, int[] assignments) {
-        this(centroids, assignments, IntUnaryOperator.identity());
-    }
-
     public int ordToDoc(int ord) {
         return assignmentOrds.applyAsInt(ord);
     }

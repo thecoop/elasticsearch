@@ -25,7 +25,7 @@ import java.util.function.IntUnaryOperator;
  * <a href="https://research.google/blog/soar-new-algorithms-for-even-faster-vector-search-with-scann/">SOAR</a> assignments.
  * The implementation relies on the use of neighborhoods: only a subset of clusters, given by the neighborhood, is considered when
  * assigning each vector.
- * The regularization augments each distance by a component proportional to the current size of the corersponding cluster,
+ * The regularization augments each distance by a component proportional to the current size of the corresponding cluster,
  * so we scale this additional term by the median distance to centroids in the mini batch to balance both terms.
  *
  * @param <V> the array type for vectors and centroids ({@code float[]} or {@code byte[]})
@@ -49,9 +49,6 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
         // A negative number means that the actual miniBatchSize will be set to k * abs(this.miniBatchSize).
         this.miniBatchSize = -2;
     }
-
-    /** Number of workers to use for parallelism */
-    protected abstract int numWorkers();
 
     /** compute the distance from every vector to every centroid */
     private void computeDistances(
@@ -158,13 +155,13 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
     ) throws IOException;
 
     @Override
-    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansIntermediate<V> kMeansIntermediate, NeighborHood[] neighborhoods)
+    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansResult<V> kMeansResult, NeighborHood[] neighborhoods)
         throws IOException {
-        V[] centroids = kMeansIntermediate.centroids();
+        V[] centroids = kMeansResult.centroids();
         int k = centroids.length;
         int n = vectors.size();
 
-        int[] assignments = kMeansIntermediate.assignments();
+        int[] assignments = kMeansResult.assignments();
         if (k == 1) {
             Arrays.fill(assignments, 0);
             return;
@@ -271,7 +268,7 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
     }
 
     /**
-     * helper that calls {@link BalancedASKMeansLocal#cluster(ClusteringVectorValues, KMeansIntermediate)} given a set of initialized
+     * helper that calls {@link BalancedASKMeansLocal#cluster(ClusteringVectorValues, KMeansResult)} given a set of initialized
      * centroids, this call is not neighbor aware
      *
      * @param vectors the vectors to cluster
@@ -282,8 +279,8 @@ abstract class BalancedASKMeansLocal<V> extends KMeansLocal<V> {
      */
     public static <V> void cluster(ClusteringVectorValues<V> vectors, CentroidOps<V> ops, V[] centroids, int sampleSize, int maxIterations)
         throws IOException {
-        KMeansIntermediate<V> kMeansIntermediate = new KMeansIntermediate<>(centroids, new int[vectors.size()], vectors::ordToDoc);
+        KMeansResult<V> kMeansResult = new KMeansResult<>(centroids, new int[vectors.size()]);
         BalancedASKMeansLocal<V> kMeans = new BalancedASKMeansLocalSerial<>(ops, sampleSize, maxIterations);
-        kMeans.cluster(vectors, kMeansIntermediate);
+        kMeans.cluster(vectors, kMeansResult);
     }
 }

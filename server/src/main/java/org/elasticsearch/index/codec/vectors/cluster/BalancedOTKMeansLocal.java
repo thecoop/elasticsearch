@@ -50,9 +50,6 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
         this.miniBatchSize = -2;
     }
 
-    /** Number of workers to use for parallelism */
-    protected abstract int numWorkers();
-
     /** compute the distance from every vector to every centroid */
     private void computeDistances(ClusteringVectorValues<V> vectors, V[] centroids, float[][] distances) throws IOException {
         CentroidAssignment.computeSquaredDistances(vectors, ops, 0, vectors.size(), centroids, distances);
@@ -113,15 +110,15 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
     ) throws IOException;
 
     @Override
-    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansIntermediate<V> kMeansIntermediate, NeighborHood[] neighborhoods)
+    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansResult<V> kMeansResult, NeighborHood[] neighborhoods)
         throws IOException {
         assert neighborhoods == null;
 
-        V[] centroids = kMeansIntermediate.centroids();
+        V[] centroids = kMeansResult.centroids();
         int k = centroids.length;
         int n = vectors.size();
 
-        int[] assignments = kMeansIntermediate.assignments();
+        int[] assignments = kMeansResult.assignments();
 
         if (k == 1) {
             Arrays.fill(assignments, 0);
@@ -226,7 +223,7 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
     }
 
     /**
-     * helper that calls {@link BalancedOTKMeansLocal#cluster(ClusteringVectorValues, KMeansIntermediate)} given a set of initialized
+     * helper that calls {@link BalancedOTKMeansLocal#cluster(ClusteringVectorValues, KMeansResult)} given a set of initialized
      * centroids, this call is not neighbor aware
      *
      * @param vectors the vectors to cluster
@@ -237,8 +234,8 @@ abstract class BalancedOTKMeansLocal<V> extends KMeansLocal<V> {
      */
     public static <V> void cluster(ClusteringVectorValues<V> vectors, CentroidOps<V> ops, V[] centroids, int sampleSize, int maxIterations)
         throws IOException {
-        KMeansIntermediate<V> kMeansIntermediate = new KMeansIntermediate<>(centroids, new int[vectors.size()], vectors::ordToDoc);
+        KMeansResult<V> kMeansResult = new KMeansResult<>(centroids, new int[vectors.size()]);
         BalancedOTKMeansLocal<V> kMeans = new BalancedOTKMeansLocalSerial<>(ops, sampleSize, maxIterations);
-        kMeans.cluster(vectors, kMeansIntermediate);
+        kMeans.cluster(vectors, kMeansResult);
     }
 }

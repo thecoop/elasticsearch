@@ -33,9 +33,6 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
         this.maxIterations = maxIterations;
     }
 
-    /** Number of workers to use for parallelism */
-    protected abstract int numWorkers();
-
     /** assign to each vector the closest centroid */
     protected abstract boolean stepLloyd(
         ClusteringVectorValues<V> vectors,
@@ -46,24 +43,13 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
         NeighborHood[] neighborHoods
     ) throws IOException;
 
-    /** assign to each vector the soar assignment */
-    protected abstract int[] assignSpilled(
-        ClusteringVectorValues<V> vectors,
-        KMeansIntermediate<V> kmeansIntermediate,
-        NeighborHood[] neighborhoods,
-        float soarLambda
-    ) throws IOException;
-
-    /** compute the neighborhoods for the given centroids and clustersPerNeighborhood */
-    protected abstract NeighborHood[] computeNeighborhoods(V[] centroids, int clustersPerNeighborhood) throws IOException;
-
     @Override
-    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansIntermediate<V> kMeansIntermediate, NeighborHood[] neighborhoods)
+    protected void innerCluster(ClusteringVectorValues<V> vectors, KMeansResult<V> kMeansResult, NeighborHood[] neighborhoods)
         throws IOException {
-        V[] centroids = kMeansIntermediate.centroids();
+        V[] centroids = kMeansResult.centroids();
         int k = centroids.length;
         int n = vectors.size();
-        int[] assignments = kMeansIntermediate.assignments();
+        int[] assignments = kMeansResult.assignments();
 
         if (k == 1) {
             Arrays.fill(assignments, 0);
@@ -117,7 +103,7 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
     }
 
     /**
-     * helper that calls {@link LloydKMeansLocal#cluster(ClusteringVectorValues, KMeansIntermediate)} given a set of initialized
+     * helper that calls {@link LloydKMeansLocal#cluster(ClusteringVectorValues, KMeansResult)} given a set of initialized
      * centroids, this call is not neighbor aware
      *
      * @param vectors the vectors to cluster
@@ -128,8 +114,8 @@ abstract class LloydKMeansLocal<V> extends KMeansLocal<V> {
      */
     public static <V> void cluster(ClusteringVectorValues<V> vectors, CentroidOps<V> ops, V[] centroids, int sampleSize, int maxIterations)
         throws IOException {
-        KMeansIntermediate<V> kMeansIntermediate = new KMeansIntermediate<>(centroids, new int[vectors.size()], vectors::ordToDoc);
+        KMeansResult<V> kMeansResult = new KMeansResult<>(centroids, new int[vectors.size()]);
         LloydKMeansLocal<V> kMeans = new LloydKMeansLocalSerial<>(ops, sampleSize, maxIterations);
-        kMeans.cluster(vectors, kMeansIntermediate);
+        kMeans.cluster(vectors, kMeansResult);
     }
 }
