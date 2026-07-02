@@ -22,7 +22,6 @@ import org.apache.lucene.index.SegmentInfo;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.tests.index.BaseKnnVectorsFormatTestCase;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
