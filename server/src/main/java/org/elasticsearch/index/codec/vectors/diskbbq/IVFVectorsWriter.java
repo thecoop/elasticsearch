@@ -126,8 +126,11 @@ public abstract class IVFVectorsWriter<CI> extends KnnVectorsWriter {
 
     public record CentroidOffsetAndLength(LongValues offsets, LongValues lengths) {}
 
-    protected abstract CI writeCentroidIndex(CentroidSupplier centroidSupplier, int[] centroidAssignments, IndexOutput centroidOutput)
-        throws IOException;
+    protected abstract CI writeCentroidIndex(
+        FieldInfo fieldInfo, CentroidSupplier centroidSupplier,
+        CentroidInformation centroidInformation,
+        IndexOutput centroidOutput
+    ) throws IOException;
 
     protected abstract void writeCentroidData(
         FieldInfo fieldInfo,
@@ -239,7 +242,7 @@ public abstract class IVFVectorsWriter<CI> extends KnnVectorsWriter {
 
             // write initial centroid index (we might need to read it later for overspilling)
             final long centroidOffset = ivfCentroids.alignFilePointer(Float.BYTES);
-            CI centroidIndex = writeCentroidIndex(centroidSupplier, centroidAssignments.assignments(), ivfCentroids);
+            CI centroidIndex = writeCentroidIndex(fieldWriter.fieldInfo, centroidSupplier, centroidAssignments, ivfCentroids);
 
             // write posting lists
             final long postingListOffset = ivfClusters.alignFilePointer(Float.BYTES);
@@ -362,7 +365,7 @@ public abstract class IVFVectorsWriter<CI> extends KnnVectorsWriter {
             centroid[d] /= count;
         }
         // For flat centroid assignments there is a single global centroid and no secondary centroid assignments
-        return new CentroidInformation(dimension, new float[][] { centroid }, new int[count], OverspillAssignments.NONE);
+        return new CentroidInformation(dimension, new float[][] { centroid }, new int[count], null, OverspillAssignments.NONE);
     }
 
     @Override
@@ -540,7 +543,7 @@ public abstract class IVFVectorsWriter<CI> extends KnnVectorsWriter {
 
                     // write initial centroid index (we might need to read it later for overspilling)
                     centroidOffset = ivfCentroids.alignFilePointer(Float.BYTES);
-                    CI centroidIndex = writeCentroidIndex(centroidSupplier, assignments.assignments(), ivfCentroids);
+                    CI centroidIndex = writeCentroidIndex(fieldInfo, centroidSupplier, assignments, ivfCentroids);
 
                     // write posting lists
                     postingListOffset = ivfClusters.alignFilePointer(Float.BYTES);

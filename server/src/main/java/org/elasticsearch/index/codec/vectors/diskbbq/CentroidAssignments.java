@@ -9,18 +9,27 @@
 
 package org.elasticsearch.index.codec.vectors.diskbbq;
 
+import org.elasticsearch.index.codec.vectors.cluster.NeighborHood;
+
 import java.util.Arrays;
 
 public record CentroidAssignments(
     int numCentroids,
     int[] assignments,
+    NeighborHood[] neighborhoods,
     OverspillAssignments overspillAssignments,
     float[] globalCentroid,
     CentroidSlices centroidSlices
 ) {
 
-    public CentroidAssignments(int numCentroids, int[] assignments, OverspillAssignments overspillAssignments, float[] globalCentroid) {
-        this(numCentroids, assignments, overspillAssignments, globalCentroid, null);
+    public CentroidAssignments(
+        int numCentroids,
+        int[] assignments,
+        NeighborHood[] neighborhoods,
+        OverspillAssignments overspillAssignments,
+        float[] globalCentroid
+    ) {
+        this(numCentroids, assignments, neighborhoods, overspillAssignments, globalCentroid, null);
     }
 
     public CentroidAssignments {

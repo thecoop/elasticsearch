@@ -612,8 +612,11 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter<ES940DiskBBQVect
     record CentroidGroups(float[][] centroids, int[][] vectors, int maxVectorsPerCentroidLength) {}
 
     @Override
-    protected CentroidGroups writeCentroidIndex(CentroidSupplier centroidSupplier, int[] centroidAssignments, IndexOutput centroidOutput)
-        throws IOException {
+    protected CentroidGroups writeCentroidIndex(
+        FieldInfo fieldInfo, CentroidSupplier centroidSupplier,
+        CentroidInformation centroidInformation,
+        IndexOutput centroidOutput
+    ) throws IOException {
         if (centroidSupplier.centroidIndex().hasData()) {
             final CentroidGroups centroidGroups = buildCentroidGroups((FlatCentroidClusters) centroidSupplier.centroidIndex());
             // write vector ord -> centroid lookup table. We need to remap current centroid ordinals
@@ -626,10 +629,10 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter<ES940DiskBBQVect
                 }
             }
             assert idx == centroidSupplier.size() : "Expected [" + centroidSupplier.size() + "], got [" + idx + "]";
-            writeCentroidLookup(centroidOutput, centroidAssignments, i -> centroidOrdinalMap[i], centroidSupplier.size());
+            writeCentroidLookup(centroidOutput, centroidInformation.assignments(), i -> centroidOrdinalMap[i], centroidSupplier.size());
             return centroidGroups;
         } else {
-            writeCentroidLookup(centroidOutput, centroidAssignments, IntUnaryOperator.identity(), centroidSupplier.size());
+            writeCentroidLookup(centroidOutput, centroidInformation.assignments(), IntUnaryOperator.identity(), centroidSupplier.size());
             return null;
         }
     }
@@ -839,8 +842,13 @@ public class ES940DiskBBQVectorsWriter extends IVFVectorsWriter<ES940DiskBBQVect
         if (logger.isDebugEnabled()) {
             logger.debug("final centroid count: {}", centroids.length);
         }
-        int[] assignments = kMeansResult.assignments();
-        return new CentroidInformation(fieldInfo.getVectorDimension(), centroids, assignments, soarOverspill);
+        return new CentroidInformation(
+            fieldInfo.getVectorDimension(),
+            centroids,
+            kMeansResult.assignments(),
+            kMeansResult.neighborHoods(),
+            soarOverspill
+        );
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)

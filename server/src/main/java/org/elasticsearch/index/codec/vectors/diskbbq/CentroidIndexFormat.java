@@ -13,7 +13,8 @@ public enum CentroidIndexFormat {
     /**
      * A flat list of centroids, possibly with a second layer of children
      */
-    FLAT(0);
+    FLAT(0),
+    HNSW(1);
 
     private final int id;
 

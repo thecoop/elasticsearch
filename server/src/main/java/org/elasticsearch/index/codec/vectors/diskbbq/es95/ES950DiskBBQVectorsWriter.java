@@ -679,11 +679,11 @@ public class ES950DiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInde
 
     @Override
     protected FlatCentroidIndexWriter.CentroidGroups writeCentroidIndex(
-        CentroidSupplier centroidSupplier,
-        int[] centroidAssignments,
+        FieldInfo fieldInfo, CentroidSupplier centroidSupplier,
+        CentroidInformation centroidInformation,
         IndexOutput centroidOutput
     ) throws IOException {
-        return FlatCentroidIndexWriter.writeCentroidIndex(centroidSupplier, centroidAssignments, centroidOutput);
+        return FlatCentroidIndexWriter.writeCentroidIndex(centroidSupplier, centroidInformation.assignments(), centroidOutput);
     }
 
     @Override
@@ -782,6 +782,7 @@ public class ES950DiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInde
                 fieldInfo.getVectorDimension(),
                 kMeansResult.centroids(),
                 kMeansResult.assignments(),
+                null,   // this is ok, the neighborhood information is not used in this diskbbq version
                 kMeansResult.overspill()
             );
         } finally {
@@ -813,7 +814,13 @@ public class ES950DiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInde
             logger.debug("final centroid count: {}", kMeansResult.centroids().length);
         }
 
-        return new CentroidInformation(fieldInfo.getVectorDimension(), kMeansResult.centroids(), kMeansResult.assignments(), soarOverspill);
+        return new CentroidInformation(
+            fieldInfo.getVectorDimension(),
+            kMeansResult.centroids(),
+            kMeansResult.assignments(),
+            kMeansResult.neighborHoods(),
+            soarOverspill
+        );
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)

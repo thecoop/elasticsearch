@@ -35,6 +35,7 @@ import org.apache.lucene.util.packed.PackedInts;
 import org.apache.lucene.util.packed.PackedLongValues;
 import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.core.WelfordVariance;
+import org.elasticsearch.index.codec.vectors.HnswUtils;
 import org.elasticsearch.index.codec.vectors.OptimizedScalarQuantizer;
 import org.elasticsearch.index.codec.vectors.cluster.CentroidOps;
 import org.elasticsearch.index.codec.vectors.cluster.ClusteringFloatVectorValues;
@@ -723,12 +724,15 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInd
 
     @Override
     protected FlatCentroidIndexWriter.CentroidGroups writeCentroidIndex(
-        CentroidSupplier centroidSupplier,
-        int[] centroidAssignments,
+        FieldInfo fieldInfo, CentroidSupplier centroidSupplier,
+        CentroidInformation centroidInformation,
         IndexOutput centroidOutput
     ) throws IOException {
         return switch (centroidIndexFormat) {
-            case FLAT -> FlatCentroidIndexWriter.writeCentroidIndex(centroidSupplier, centroidAssignments, centroidOutput);
+            case FLAT -> FlatCentroidIndexWriter.writeCentroidIndex(centroidSupplier, centroidInformation.assignments(), centroidOutput);
+            case HNSW -> {
+                HnswUtils.buildMultiLevelFromNeighborhoods(centroidInformation.neighborhoods(), )
+            }
         };
     }
 
@@ -839,6 +843,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInd
                 fieldInfo.getVectorDimension(),
                 kMeansResult.centroids(),
                 kMeansResult.assignments(),
+                null,   // TODO: calculate/get neighborhood information for use in building HNSW graph
                 kMeansResult.overspill()
             );
         } finally {
@@ -929,6 +934,7 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInd
             floatVectorValues.dimension(),
             merged.centroids(),
             merged.assignments(),
+            null,
             merged.overspill(),
             centroidSlices
         );
@@ -1003,7 +1009,13 @@ public class ESNextDiskBBQVectorsWriter extends IVFVectorsWriter<FlatCentroidInd
         }
 
         // TODO: swap out SOAR for SRAIR when HNSW graphs are used for the centroids
-        return new CentroidInformation(fieldInfo.getVectorDimension(), kMeansResult.centroids(), kMeansResult.assignments(), soarOverspill);
+        return new CentroidInformation(
+            fieldInfo.getVectorDimension(),
+            kMeansResult.centroids(),
+            kMeansResult.assignments(),
+            kMeansResult.neighborHoods(),
+            soarOverspill
+        );
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)

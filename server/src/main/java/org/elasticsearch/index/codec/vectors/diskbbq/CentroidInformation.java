@@ -9,12 +9,26 @@
 
 package org.elasticsearch.index.codec.vectors.diskbbq;
 
+import org.elasticsearch.index.codec.vectors.cluster.NeighborHood;
+
 public record CentroidInformation(float[][] centroids, CentroidAssignments centroidAssignments) {
 
-    public CentroidInformation(int dims, float[][] centroids, int[] assignments, OverspillAssignments overspillAssignments) {
+    public CentroidInformation(
+        int dims,
+        float[][] centroids,
+        int[] assignments,
+        NeighborHood[] neighborhoods,
+        OverspillAssignments overspillAssignments
+    ) {
         this(
             centroids,
-            new CentroidAssignments(centroids.length, assignments, overspillAssignments, computeGlobalCentroid(dims, centroids))
+            new CentroidAssignments(
+                centroids.length,
+                assignments,
+                neighborhoods,
+                overspillAssignments,
+                computeGlobalCentroid(dims, centroids)
+            )
         );
     }
 
@@ -22,6 +36,7 @@ public record CentroidInformation(float[][] centroids, CentroidAssignments centr
         int dims,
         float[][] centroids,
         int[] assignments,
+        NeighborHood[] neighborhoods,
         OverspillAssignments overspillAssignments,
         CentroidSlices centroidSlices
     ) {
@@ -30,6 +45,7 @@ public record CentroidInformation(float[][] centroids, CentroidAssignments centr
             new CentroidAssignments(
                 centroids.length,
                 assignments,
+                neighborhoods,
                 overspillAssignments,
                 computeGlobalCentroid(dims, centroids),
                 centroidSlices
@@ -47,6 +63,10 @@ public record CentroidInformation(float[][] centroids, CentroidAssignments centr
 
     public int[] assignments() {
         return centroidAssignments.assignments();
+    }
+
+    public NeighborHood[] neighborhoods() {
+        return centroidAssignments.neighborhoods();
     }
 
     public OverspillAssignments overspillAssignments() {

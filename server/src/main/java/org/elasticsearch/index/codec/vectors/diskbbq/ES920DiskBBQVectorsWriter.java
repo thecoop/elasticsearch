@@ -490,8 +490,11 @@ public class ES920DiskBBQVectorsWriter extends IVFVectorsWriter<ES920DiskBBQVect
     record CentroidGroups(float[][] centroids, int[][] vectors, int maxVectorsPerCentroidLength) {}
 
     @Override
-    protected CentroidGroups writeCentroidIndex(CentroidSupplier centroidSupplier, int[] centroidAssignments, IndexOutput centroidOutput)
-        throws IOException {
+    protected CentroidGroups writeCentroidIndex(
+        FieldInfo fieldInfo, CentroidSupplier centroidSupplier,
+        CentroidInformation centroidInformation,
+        IndexOutput centroidOutput
+    ) throws IOException {
         if (centroidSupplier.centroidIndex().hasData()) {
             return buildCentroidGroups((FlatCentroidClusters) centroidSupplier.centroidIndex());
         } else {
@@ -682,7 +685,7 @@ public class ES920DiskBBQVectorsWriter extends IVFVectorsWriter<ES920DiskBBQVect
             logger.debug("final centroid count: {}", centroids.length);
         }
         int[] assignments = kMeansResult.assignments();
-        return new CentroidInformation(fieldInfo.getVectorDimension(), centroids, assignments, soarOverspill);
+        return new CentroidInformation(fieldInfo.getVectorDimension(), centroids, assignments, kMeansResult.neighborHoods(), soarOverspill);
     }
 
     static void writeQuantizedValue(IndexOutput indexOutput, byte[] binaryValue, OptimizedScalarQuantizer.QuantizationResult corrections)
