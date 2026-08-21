@@ -9,6 +9,8 @@
 
 package org.elasticsearch.simdvec;
 
+import org.elasticsearch.simdvec.internal.vectorization.PanamaAshSphericalScalarQuantizer;
+
 import java.util.Arrays;
 import java.util.function.IntUnaryOperator;
 
@@ -21,7 +23,7 @@ import java.util.function.IntUnaryOperator;
  * For 2-bit, a specialized sweep selects between magnitudes 0.5 and 1.5.
  * For higher bit widths, a general event-based scan assigns optimal levels.
  */
-public final class AshSphericalScalarQuantizer {
+public sealed class AshSphericalScalarQuantizer permits PanamaAshSphericalScalarQuantizer {
 
     private final int bitsPerDim;
 
@@ -47,7 +49,7 @@ public final class AshSphericalScalarQuantizer {
      * @param bitsPerDim number of bits per projected dimension (must be >= 1)
      * @throws IllegalArgumentException if bitsPerDim is less than 1
      */
-    AshSphericalScalarQuantizer(int bitsPerDim) {
+    public AshSphericalScalarQuantizer(int bitsPerDim) {
         if (bitsPerDim < 1) {
             throw new IllegalArgumentException("bitsPerDim must be >= 1");
         }
@@ -103,7 +105,7 @@ public final class AshSphericalScalarQuantizer {
      * 1-bit quantization: each dimension is assigned magnitude 0.5 with the sign of the input.
      * The norm is always sqrt(0.25 * d) = 0.5 * sqrt(d).
      */
-    static float quantizeExact1Bit(float[] z, int zOffset, float[] out, int outOffset, int d) {
+    protected float quantizeExact1Bit(float[] z, int zOffset, float[] out, int outOffset, int d) {
         for (int j = 0; j < d; j++) {
             out[outOffset + j] = Math.copySign(0.5f, z[zOffset + j]);
         }
@@ -118,7 +120,7 @@ public final class AshSphericalScalarQuantizer {
      * cumDot / sqrt(cumNormSq), where upgrading dimension j adds |z_j| to cumDot and 2.0 to cumNormSq.
      * The selected set is recovered via a threshold on |z_j| rather than by tracking indices.
      */
-    static float quantizeExact2Bit(float[] z, int zOffset, float[] out, int outOffset, int d) {
+    protected float quantizeExact2Bit(float[] z, int zOffset, float[] out, int outOffset, int d) {
         // Base level: all dims at 0.5 -> cumDot = sum(0.5 * |z_j|), cumNormSq = 0.25 * d
         float[] absZ = new float[d];
         double dot = 0;
@@ -187,7 +189,7 @@ public final class AshSphericalScalarQuantizer {
      * sweep is a merge of the runs. The selected set is recovered from the threshold alone,
      * which is why only magnitudes need sorting and not the dimension indices alongside them.
      */
-    static float quantizeExactGeneral(float[] z, int zOffset, float[] out, int outOffset, int d, int nSteps) {
+    protected float quantizeExactGeneral(float[] z, int zOffset, float[] out, int outOffset, int d, int nSteps) {
         // Base level: all dims at 0.5 -> dot = sum(0.5 * |z_j|), normSq = 0.25 * d
         // use doubles here, as small differences between steps can be significant
         float[] absZ = new float[d];

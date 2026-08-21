@@ -13,7 +13,6 @@ import org.elasticsearch.common.CheckedIntFunction;
 import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.elasticsearch.simdvec.ESVectorUtil;
 import org.elasticsearch.simdvec.ESVectorizationProvider;
-import org.elasticsearch.simdvec.OptimizedScalarQuantization;
 import org.elasticsearch.simdvec.VectorScorerFactory;
 
 import java.io.IOException;
@@ -44,8 +43,7 @@ import java.util.function.IntUnaryOperator;
  */
 public final class AsymmetricHashingQuantizer {
 
-    private static final VectorScorerFactory FACTORY = ESVectorizationProvider.getInstance()
-        .getVectorScorerFactory();
+    private static final VectorScorerFactory FACTORY = ESVectorizationProvider.getInstance().getVectorScorerFactory();
 
     /** Training method for the projection matrix W. */
     public enum Method {

@@ -10,6 +10,7 @@
 package org.elasticsearch.benchmark.vector.quantization;
 
 import org.elasticsearch.benchmark.Utils;
+import org.elasticsearch.benchmark.vector.VectorImplementation;
 import org.elasticsearch.index.codec.vectors.VectorTestUtils;
 import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.elasticsearch.simdvec.ESVectorizationProvider;
@@ -52,6 +53,9 @@ public class AshSphericalScalarQuantizerBenchmark {
         TIED
     }
 
+    @Param({ "SCALAR", "PANAMA" })
+    VectorImplementation implementation;
+
     @Param({ "1000" })
     int numVectors;
 
@@ -71,7 +75,11 @@ public class AshSphericalScalarQuantizerBenchmark {
 
     @Setup(Level.Trial)
     public void init() {
-        quantizer = ESVectorizationProvider.lookup(false, false).getVectorScorerFactory().newAshSphericalScalarQuantizer(bitsPerDim);
+        quantizer = (switch (implementation) {
+            case SCALAR -> ESVectorizationProvider.lookup(false, false);
+            case PANAMA -> ESVectorizationProvider.lookup(true, false);
+            default -> throw new AssertionError(implementation);
+        }).getVectorScorerFactory().newAshSphericalScalarQuantizer(bitsPerDim);
 
         Random random = new Random();
         out = new float[dims];

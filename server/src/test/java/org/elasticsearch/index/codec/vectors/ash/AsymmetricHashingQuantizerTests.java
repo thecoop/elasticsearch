@@ -14,7 +14,6 @@ import org.apache.lucene.store.ByteBuffersIndexInput;
 import org.apache.lucene.store.ByteBuffersIndexOutput;
 import org.apache.lucene.util.BitUtil;
 import org.elasticsearch.common.CheckedIntFunction;
-import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.elasticsearch.simdvec.AsymmetricHashingScorer;
 import org.elasticsearch.simdvec.ESVectorUtil;
 import org.elasticsearch.test.ESTestCase;
@@ -29,7 +28,6 @@ import java.util.stream.IntStream;
 
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.oneOf;
 
 /**
  * Tests for the core ASH algorithm components: SVD, quantizers, and the full pipeline.

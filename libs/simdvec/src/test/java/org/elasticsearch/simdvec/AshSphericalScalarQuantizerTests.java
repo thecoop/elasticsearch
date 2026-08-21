@@ -9,9 +9,16 @@
 
 package org.elasticsearch.simdvec;
 
+import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
+
 import org.apache.lucene.util.ArrayUtil;
+import org.elasticsearch.simdvec.internal.vectorization.PanamaAshSphericalScalarQuantizer;
 import org.elasticsearch.test.ESTestCase;
 
+import java.util.List;
+import java.util.function.IntFunction;
+
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThan;
@@ -23,13 +30,39 @@ import static org.hamcrest.Matchers.oneOf;
  */
 public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
+    private final IntFunction<AshSphericalScalarQuantizer> quantizerFactory;
+
+    public AshSphericalScalarQuantizerTests(VectorScorerFactory quantizerFactory) {
+        this.quantizerFactory = quantizerFactory::newAshSphericalScalarQuantizer;
+    }
+
+    @ParametersFactory
+    public static Iterable<Object[]> parametersFactory() {
+        return List.of(new Object[] { new DefaultVectorScorerFactory() },
+            new Object[] { new PanamaVectorScorerFactory() });
+    }
+
     public void testInvalidBitsPerDimThrows() {
-        expectThrows(IllegalArgumentException.class, () -> new AshSphericalScalarQuantizer(0));
-        expectThrows(IllegalArgumentException.class, () -> new AshSphericalScalarQuantizer(-1));
+        expectThrows(IllegalArgumentException.class, () -> quantizerFactory.apply(0));
+        expectThrows(IllegalArgumentException.class, () -> quantizerFactory.apply(-1));
+    }
+
+    public void test1BitSignPreservation() {
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(1);
+        int d = 50;
+        float[] input = randomGaussianVector(d);
+        AshSphericalScalarQuantizer.SingleQuantizeResult result = ssq.encodeOne(input);
+        for (int j = 0; j < d; j++) {
+            if (input[j] >= 0) {
+                assertThat("Expected positive code for positive input at dim " + j, result.centeredCode()[j], equalTo(0.5f));
+            } else {
+                assertThat("Expected negative code for negative input at dim " + j, result.centeredCode()[j], equalTo(-0.5f));
+            }
+        }
     }
 
     public void testSphericalScalarQuantizer2Bit() {
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         float[] x = { 0.8f, -0.5f, 0.3f, -0.9f };
         AshSphericalScalarQuantizer.QuantizeResult result = ssq.encode(x, 1, x.length);
 
@@ -44,7 +77,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void test2BitMagnitudes() {
         // 2-bit: magnitudes must be 0.5 or 1.5
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         for (int iter = 0; iter < 20; iter++) {
             int d = randomIntBetween(4, 200);
             float[] input = randomGaussianVector(d);
@@ -57,7 +90,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
     }
 
     public void test2BitSignPreservation() {
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         int d = 50;
         float[] input = randomGaussianVector(d);
         AshSphericalScalarQuantizer.SingleQuantizeResult result = ssq.encodeOne(input);
@@ -72,7 +105,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void test3BitMagnitudes() {
         // 3-bit: numAbsLevels=4, magnitudes in {0.5, 1.5, 2.5, 3.5}
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(3);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(3);
         for (int iter = 0; iter < 20; iter++) {
             int d = randomIntBetween(4, 100);
             float[] input = randomGaussianVector(d);
@@ -86,7 +119,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void test4BitMagnitudes() {
         // 4-bit: numAbsLevels=8, magnitudes in {0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5}
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(4);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(4);
         for (int iter = 0; iter < 10; iter++) {
             int d = randomIntBetween(4, 100);
             float[] input = randomGaussianVector(d);
@@ -100,7 +133,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void testNormPositive() {
         for (int bits = 2; bits <= 4; bits++) {
-            AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bits);
+            AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bits);
             int d = randomIntBetween(4, 200);
             float[] input = randomGaussianVector(d);
             AshSphericalScalarQuantizer.SingleQuantizeResult result = ssq.encodeOne(input);
@@ -114,7 +147,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
      * exercised at non-zero offsets into the flat input and output arrays.
      */
     public void testEncodeOneMatchesBatch() {
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(randomIntBetween(1, 4));
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(randomIntBetween(1, 4));
         int d = 16;
         int n = randomIntBetween(2, 5);
         float[] batchInput = randomGaussianVector(n * d);
@@ -133,7 +166,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
     }
 
     public void testEmptyInput() {
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         AshSphericalScalarQuantizer.QuantizeResult result = ssq.encode(new float[0], 0, 16);
         assertEquals(0, result.centeredCodes().length);
         assertEquals(0, result.codeNorms().length);
@@ -141,7 +174,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void test2BitOptimalAssignment() {
         // One very large dimension, rest small — the large dim should get 1.5, others 0.5
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         int d = 10;
         float[] input = new float[d];
         input[0] = 10.0f;  // much larger than the rest
@@ -155,7 +188,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void testInnerProductPreservation() {
         // Quantized dot product should positively correlate with true dot product
-        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        AshSphericalScalarQuantizer ssq = quantizerFactory.apply(2);
         int d = 64;
         int n = 200;
         float[][] vectors = new float[n][d];
@@ -189,7 +222,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
         // restrict this test to those.
         for (int bitsPerDim = 3; bitsPerDim <= 4; bitsPerDim++) {
             int numAbsLevels = 1 << (bitsPerDim - 1);
-            AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bitsPerDim);
+            AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bitsPerDim);
             int d = 4;
             for (int iter = 0; iter < 20; iter++) {
                 assertMatchesBruteForceOptimum(ssq, numAbsLevels, randomGaussianVector(d), iter);
@@ -202,7 +235,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void testNormMatchesCode() {
         for (int bitsPerDim = 1; bitsPerDim <= 8; bitsPerDim++) {
-            AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bitsPerDim);
+            AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bitsPerDim);
             int nSteps = (1 << (bitsPerDim - 1)) - 1;
             int d = randomIntBetween(1, 200);
             float[] z = randomFlavouredVector(d, nSteps);
@@ -220,7 +253,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
 
     public void testLevelsAreMonotonicInMagnitude() {
         for (int bitsPerDim = 1; bitsPerDim <= 8; bitsPerDim++) {
-            AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bitsPerDim);
+            AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bitsPerDim);
             int nSteps = (1 << (bitsPerDim - 1)) - 1;
             int d = randomIntBetween(2, 64);
             float[] z = randomFlavouredVector(d, nSteps);
@@ -244,7 +277,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
      */
     public void testGeneralPathDegenerateInputs() {
         for (int bitsPerDim = 3; bitsPerDim <= 8; bitsPerDim++) {
-            AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bitsPerDim);
+            AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bitsPerDim);
             float maxMagnitude = 0.5f + (1 << (bitsPerDim - 1)) - 1;
 
             // single dimension
@@ -283,7 +316,7 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
             float[] z = randomGaussianVector(d);
             double previousCos = -1;
             for (int bitsPerDim = 1; bitsPerDim <= 8; bitsPerDim++) {
-                AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(bitsPerDim);
+                AshSphericalScalarQuantizer ssq = quantizerFactory.apply(bitsPerDim);
                 AshSphericalScalarQuantizer.SingleQuantizeResult result = ssq.encodeOne(z);
                 double cos = ESVectorUtil.dotProduct(z, result.centeredCode()) / result.codeNorm();
                 assertThat(
