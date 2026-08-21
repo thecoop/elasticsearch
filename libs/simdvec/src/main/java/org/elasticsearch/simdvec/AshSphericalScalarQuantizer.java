@@ -89,7 +89,7 @@ public final class AshSphericalScalarQuantizer {
      * {@code out[outOffset..]}. The offsets let a caller quantize one row of a flat
      * row-major matrix in place.
      */
-    private float quantizeExact(float[] z, int zOffset, float[] out, int outOffset, int d) {
+    public float quantizeExact(float[] z, int zOffset, float[] out, int outOffset, int d) {
         int nSteps = (1 << (bitsPerDim - 1)) - 1;
 
         return switch (nSteps) {

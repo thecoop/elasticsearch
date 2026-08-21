@@ -11,8 +11,8 @@ package org.elasticsearch.benchmark.vector.quantization;
 
 import org.elasticsearch.benchmark.Utils;
 import org.elasticsearch.index.codec.vectors.VectorTestUtils;
-import org.elasticsearch.index.codec.vectors.ash.SvdUtil;
 import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
+import org.elasticsearch.simdvec.ESVectorizationProvider;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -55,6 +55,9 @@ public class AshSphericalScalarQuantizerBenchmark {
     @Param({ "1000" })
     int numVectors;
 
+    @Param({ "1", "2", "3", "4" })
+    int bitsPerDim;
+
     /** Projected dims: originalDim / 2 by default, so these cover 384/768/1024/1536-dim input vectors. */
     @Param({ "192", "384", "512", "768" })
     int dims;
@@ -62,17 +65,20 @@ public class AshSphericalScalarQuantizerBenchmark {
     @Param({ "GAUSSIAN", "UNIFORM", "TIED" })
     Distribution distribution;
 
+    private AshSphericalScalarQuantizer quantizer;
     private float[][] vectors;
     private float[] out;
 
     @Setup(Level.Trial)
     public void init() {
+        quantizer = ESVectorizationProvider.lookup(false, false).getVectorScorerFactory().newAshSphericalScalarQuantizer(bitsPerDim);
+
         Random random = new Random();
         out = new float[dims];
         vectors = new float[numVectors][];
         for (int i = 0; i < numVectors; i++) {
             vectors[i] = switch (distribution) {
-                case GAUSSIAN -> SvdUtil.randomGaussians(random, dims);
+                case GAUSSIAN -> randomGaussians(random, dims);
                 case UNIFORM -> VectorTestUtils.randomFloatVector(random, dims);
                 case TIED -> tied(random, dims);
             };
@@ -80,37 +86,22 @@ public class AshSphericalScalarQuantizerBenchmark {
     }
 
     @Benchmark
-    public void oneBit(Blackhole bh) {
+    public void quantize(Blackhole bh) {
         for (int i = 0; i < numVectors; i++) {
-            float val = AshSphericalScalarQuantizer.quantizeExact1Bit(vectors[i], 0, out, 0, dims);
+            float val = quantizer.quantizeExact(vectors[i], 0, out, 0, dims);
             bh.consume(val);
         }
     }
 
-    @Benchmark
-    public void twoBit(Blackhole bh) {
-        for (int i = 0; i < numVectors; i++) {
-            float val = AshSphericalScalarQuantizer.quantizeExact2Bit(vectors[i], 0, out, 0, dims);
-            bh.consume(val);
+    /**
+     * Returns an array of floats each with a Gaussian distribution around 0.0
+     */
+    public static float[] randomGaussians(Random random, int dims) {
+        float[] v = new float[dims];
+        for (int i = 0; i < dims; i++) {
+            v[i] = (float) random.nextGaussian();
         }
-    }
-
-    @Benchmark
-    public void threeBit(Blackhole bh) {
-        final int bits = 3;
-        for (int i = 0; i < numVectors; i++) {
-            float val = AshSphericalScalarQuantizer.quantizeExactGeneral(vectors[i], 0, out, 0, dims, (1 << (bits - 1)) - 1);
-            bh.consume(val);
-        }
-    }
-
-    @Benchmark
-    public void fourBit(Blackhole bh) {
-        final int bits = 4;
-        for (int i = 0; i < numVectors; i++) {
-            float val = AshSphericalScalarQuantizer.quantizeExactGeneral(vectors[i], 0, out, 0, dims, (1 << (bits - 1)) - 1);
-            bh.consume(val);
-        }
+        return v;
     }
 
     /**
