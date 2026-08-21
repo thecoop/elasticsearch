@@ -108,6 +108,11 @@ final class PanamaVectorScorerFactory implements VectorScorerFactory {
     }
 
     @Override
+    public AshSphericalScalarQuantizer newAshSphericalScalarQuantizer(int bitsPerDim) {
+        return new AshSphericalScalarQuantizer(bitsPerDim);
+    }
+
+    @Override
     public Optional<RandomVectorScorerSupplier> getFloat32VectorScorerSupplier(
         VectorSimilarityType similarityType,
         IndexInput input,

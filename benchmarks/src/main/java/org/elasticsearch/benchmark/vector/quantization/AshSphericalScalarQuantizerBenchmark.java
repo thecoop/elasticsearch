@@ -7,10 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.index.codec.vectors.ash;
+package org.elasticsearch.benchmark.vector.quantization;
 
 import org.elasticsearch.benchmark.Utils;
 import org.elasticsearch.index.codec.vectors.VectorTestUtils;
+import org.elasticsearch.index.codec.vectors.ash.SvdUtil;
+import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -36,7 +38,6 @@ import java.util.concurrent.TimeUnit;
 @Fork(value = 1, jvmArgsPrepend = { "--add-modules=jdk.incubator.vector" })
 public class AshSphericalScalarQuantizerBenchmark {
 
-    // TODO: move to org.elasticsearch.benchmark.vector.quantization when the methods move out of SphericalQuantizer for panama-isation
     static {
         Utils.configureBenchmarkLogging();
     }

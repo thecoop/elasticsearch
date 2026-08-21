@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.index.codec.vectors.ash;
+package org.elasticsearch.simdvec;
 
 import java.util.Arrays;
 import java.util.function.IntUnaryOperator;
@@ -21,7 +21,7 @@ import java.util.function.IntUnaryOperator;
  * For 2-bit, a specialized sweep selects between magnitudes 0.5 and 1.5.
  * For higher bit widths, a general event-based scan assigns optimal levels.
  */
-final class AshSphericalScalarQuantizer {
+public final class AshSphericalScalarQuantizer {
 
     private final int bitsPerDim;
 
@@ -31,15 +31,15 @@ final class AshSphericalScalarQuantizer {
      * @param centeredCode code centered around zero, length nDims
      * @param codeNorm L2 norm of the code vector
      */
-    record SingleQuantizeResult(float[] centeredCode, float codeNorm) {}
+    public record SingleQuantizeResult(float[] centeredCode, float codeNorm) {}
 
     /**
      * Result of batch quantization.
      *
-     * @param centeredCodes codes centered around zero, row-major (n x nDims)
+     * @param centeredCodes codes centered around zero, row-major matrix (n x nDims)
      * @param codeNorms L2 norm of each code vector, length n
      */
-    record QuantizeResult(float[] centeredCodes, float[] codeNorms) {}
+    public record QuantizeResult(float[] centeredCodes, float[] codeNorms) {}
 
     /**
      * Creates a spherical scalar quantizer with the given bit width.
@@ -65,7 +65,7 @@ final class AshSphericalScalarQuantizer {
      * @param n number of vectors
      * @param nDims components per vector
      */
-    QuantizeResult encode(float[] x, int n, int nDims) {
+    public QuantizeResult encode(float[] x, int n, int nDims) {
         float[] centeredCodes = new float[n * nDims];
         float[] codeNorms = new float[n];
 
@@ -76,7 +76,7 @@ final class AshSphericalScalarQuantizer {
         return new QuantizeResult(centeredCodes, codeNorms);
     }
 
-    SingleQuantizeResult encodeOne(float[] xLatent) {
+    public SingleQuantizeResult encodeOne(float[] xLatent) {
         int nDims = xLatent.length;
         float[] out = new float[nDims];
         float norm = quantizeExact(xLatent, 0, out, 0, nDims);

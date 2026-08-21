@@ -7,10 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.index.codec.vectors.ash;
+package org.elasticsearch.simdvec;
 
 import org.apache.lucene.util.ArrayUtil;
-import org.elasticsearch.simdvec.ESVectorUtil;
 import org.elasticsearch.test.ESTestCase;
 
 import static org.hamcrest.Matchers.greaterThan;
@@ -27,6 +26,20 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
     public void testInvalidBitsPerDimThrows() {
         expectThrows(IllegalArgumentException.class, () -> new AshSphericalScalarQuantizer(0));
         expectThrows(IllegalArgumentException.class, () -> new AshSphericalScalarQuantizer(-1));
+    }
+
+    public void testSphericalScalarQuantizer2Bit() {
+        AshSphericalScalarQuantizer ssq = new AshSphericalScalarQuantizer(2);
+        float[] x = { 0.8f, -0.5f, 0.3f, -0.9f };
+        AshSphericalScalarQuantizer.QuantizeResult result = ssq.encode(x, 1, x.length);
+
+        // Codes should be centered: sign * (0.5 + level)
+        // With 2 bits, levels are 0 or 1, so magnitudes are 0.5 or 1.5
+        for (float val : result.centeredCodes()) {
+            float absMag = Math.abs(val);
+            assertThat(absMag, oneOf(0.5f, 1.5f));
+        }
+        assertThat(result.codeNorms()[0], greaterThan(0f));
     }
 
     public void test2BitMagnitudes() {
@@ -331,13 +344,17 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
     }
 
     private float[] randomGaussianVector(int d) {
-        return SvdUtil.randomGaussians(random(), d);
+        float[] v = new float[d];
+        for (int i = 0; i < d; i++) {
+            v[i] = (float) random().nextGaussian();
+        }
+        return v;
     }
 
     private float[] randomDegenerateVector(int d) {
         float[] v = new float[d];
-        for (int j = 0; j < d; j++) {
-            v[j] = (randomBoolean() ? 1 : -1) * randomFrom(1e-40f, 1e-20f, 1f, 1e20f);
+        for (int i = 0; i < d; i++) {
+            v[i] = (randomBoolean() ? 1 : -1) * randomFrom(1e-40f, 1e-20f, 1f, 1e20f);
         }
         return v;
     }
@@ -349,8 +366,8 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
      */
     private float[] randomTiedVector(int d) {
         float[] v = new float[d];
-        for (int j = 0; j < d; j++) {
-            v[j] = (randomBoolean() ? 1 : -1) * (randomIntBetween(1, 4) / 2f);
+        for (int i = 0; i < d; i++) {
+            v[i] = (randomBoolean() ? 1 : -1) * (randomIntBetween(1, 4) / 2f);
         }
         return v;
     }
@@ -367,14 +384,14 @@ public class AshSphericalScalarQuantizerTests extends ESTestCase {
         v[0] = base;
         // at bitsPerDim=1 there are no steps to straddle, so fall back to whole multiples of the base
         int steps = Math.max(nSteps, 1);
-        for (int j = 1; j < d; j++) {
+        for (int i = 1; i < d; i++) {
             float onBoundary = (float) ((double) randomIntBetween(1, steps) * base / randomIntBetween(1, steps));
             float magnitude = switch (randomIntBetween(0, 2)) {
                 case 0 -> onBoundary;
                 case 1 -> Math.nextUp(onBoundary);
                 default -> Math.nextDown(onBoundary);
             };
-            v[j] = randomBoolean() ? magnitude : -magnitude;
+            v[i] = randomBoolean() ? magnitude : -magnitude;
         }
         return v;
     }

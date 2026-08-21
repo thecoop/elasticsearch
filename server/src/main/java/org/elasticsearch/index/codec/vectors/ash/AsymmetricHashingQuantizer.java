@@ -10,7 +10,11 @@
 package org.elasticsearch.index.codec.vectors.ash;
 
 import org.elasticsearch.common.CheckedIntFunction;
+import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.elasticsearch.simdvec.ESVectorUtil;
+import org.elasticsearch.simdvec.ESVectorizationProvider;
+import org.elasticsearch.simdvec.OptimizedScalarQuantization;
+import org.elasticsearch.simdvec.VectorScorerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -39,6 +43,9 @@ import java.util.function.IntUnaryOperator;
  * length rows*cols.
  */
 public final class AsymmetricHashingQuantizer {
+
+    private static final VectorScorerFactory FACTORY = ESVectorizationProvider.getInstance()
+        .getVectorScorerFactory();
 
     /** Training method for the projection matrix W. */
     public enum Method {
@@ -87,7 +94,7 @@ public final class AsymmetricHashingQuantizer {
         this.nTrainingIterations = nTrainingIterations;
         this.trainingFactor = trainingFactor;
         this.seed = seed;
-        this.quantizer = new AshSphericalScalarQuantizer(bitsPerDim);
+        this.quantizer = FACTORY.newAshSphericalScalarQuantizer(bitsPerDim);
     }
 
     /**
