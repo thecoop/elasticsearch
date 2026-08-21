@@ -15,6 +15,7 @@ import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
+import org.apache.lucene.util.LSBRadixSorter;
 import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 
 import java.util.Arrays;
@@ -55,29 +56,31 @@ public final class PanamaAshSphericalScalarQuantizer extends AshSphericalScalarQ
         return (float) Math.sqrt(0.25 * d);
     }
 
+    private static final ThreadLocal<LSBRadixSorter> SORTER = ThreadLocal.withInitial(LSBRadixSorter::new);
+
     @Override
     protected float quantizeExact2Bit(float[] z, int zOffset, float[] out, int outOffset, int d) {
         final int limit = FLOAT_SPECIES.loopBound(d);
         FloatVector halfConst = FloatVector.broadcast(FLOAT_SPECIES, 0.5f);
 
-        float[] absZ = new float[d];
+        int[] absZF = new int[d];
         FloatVector dotAcc = FloatVector.zero(FLOAT_SPECIES);
         int i=0;
         for (; i < limit; i += FLOAT_SPECIES.length()) {
             FloatVector abs = FloatVector.fromArray(FLOAT_SPECIES, z, zOffset + i).abs();
-            abs.intoArray(absZ, i);
+            abs.reinterpretAsInts().intoArray(absZF, i);
             dotAcc = halfConst.fma(abs, dotAcc);
         }
         if (i < d) {
             var mask = FLOAT_SPECIES.indexInRange(i, d);
             FloatVector abs = FloatVector.fromArray(FLOAT_SPECIES, z, zOffset + i, mask).abs();
-            abs.intoArray(absZ, i, mask);
+            abs.reinterpretAsInts().intoArray(absZF, i, mask.cast(INTEGER_SPECIES));
             dotAcc = halfConst.fma(abs, dotAcc);
         }
         double dot = dotAcc.reduceLanes(ADD);
 
         // Sorted ascending; the iteration is then done backwards
-        Arrays.sort(absZ);
+        SORTER.get().sort(31, absZF, d);
 
         double normSq = 0.25 * d;
         double bestDot = dot;
@@ -87,11 +90,11 @@ public final class PanamaAshSphericalScalarQuantizer extends AshSphericalScalarQ
         int bestK = 0; // number of dimensions to upgrade to level 1.5
         for (int k = 0; k < d; k++) {
             i = d - 1 - k;
-            dot += absZ[i];  // upgrading from 0.5 to 1.5 adds 1.0 * |z_dim|
+            dot += Float.intBitsToFloat(absZF[i]);  // upgrading from 0.5 to 1.5 adds 1.0 * |z_dim|
             normSq += 2.0;   // 1.5^2 - 0.5^2 = 2.0
 
             // Handle ties: skip evaluation if next dim has the same |z|
-            if (i > 0 && absZ[i] == absZ[i - 1]) {
+            if (i > 0 && absZF[i] == absZF[i - 1]) {
                 continue;
             }
 
@@ -109,7 +112,7 @@ public final class PanamaAshSphericalScalarQuantizer extends AshSphericalScalarQ
             return quantizeExact1Bit(z, zOffset, out, outOffset, d);
         }
 
-        float threshold = absZ[d - bestK];
+        float threshold = Float.intBitsToFloat(absZF[d - bestK]);
 
         IntVector oneHalfConst = FloatVector.broadcast(FLOAT_SPECIES, 1.5f).reinterpretAsInts();
         IntVector signBit = IntVector.broadcast(INTEGER_SPECIES, 0x80000000);
