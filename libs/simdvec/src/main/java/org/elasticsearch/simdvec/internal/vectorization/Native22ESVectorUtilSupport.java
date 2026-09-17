@@ -15,6 +15,7 @@ import org.elasticsearch.simdvec.MultiBFloat16VectorsSource;
 import org.elasticsearch.simdvec.MultiByteVectorsSource;
 import org.elasticsearch.simdvec.MultiFloatVectorsSource;
 import org.elasticsearch.simdvec.MultiVectorsSource;
+import org.elasticsearch.simdvec.OpenBlasLibrary;
 import org.elasticsearch.simdvec.SimdVecLibrary;
 
 import java.lang.foreign.MemorySegment;
@@ -22,6 +23,7 @@ import java.lang.foreign.MemorySegment;
 public final class Native22ESVectorUtilSupport extends PanamaESVectorUtilSupport {
 
     private static final SimdVecLibrary DISTANCE_FUNCS = SimdVecLibrary.instance().orElseThrow(AssertionError::new);
+    private static final OpenBlasLibrary OPENBLAS = OpenBlasLibrary.instance().orElse(null);
 
     /*
      * This is technically separate to the Panama22 implementation, but there's
@@ -175,5 +177,14 @@ public final class Native22ESVectorUtilSupport extends PanamaESVectorUtilSupport
 
     private static boolean canUseI8BulkPath(MultiByteVectorsSource source) {
         return canUseBulkPath(source) && source.vectorByteSize() == source.vectorDims();
+    }
+
+    @Override
+    public void matrixMultiply(float[] a, float[] b, int m, int k, int n, float[] result) {
+        if (OPENBLAS == null) {
+            super.matrixMultiply(a, b, m, k, n, result);
+        } else {
+            OPENBLAS.matrixMultiply(a, b, m, k, n, result);
+        }
     }
 }

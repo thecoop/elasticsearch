@@ -1379,6 +1379,11 @@ public class ESVectorUtilTests extends BaseVectorizationTests {
         float[] panama = new float[m * n];
         panamaProvider.getVectorUtilSupport().matrixMultiply(a, b, m, k, n, panama);
         assertArrayEquals(expected, panama, 1e-3f);
+        // On machines without libopenblas.so this falls through to Panama, which is harmless.
+        // On Graviton4 with the prototype library it exercises the OpenBLAS path.
+        float[] nativeResult = new float[m * n];
+        nativeProvider.getVectorUtilSupport().matrixMultiply(a, b, m, k, n, nativeResult);
+        assertArrayEquals(expected, nativeResult, 1e-3f);
     }
 
     private static float[] basicMatrixMultiply(float[] a, float[] b, int m, int k, int n) {
