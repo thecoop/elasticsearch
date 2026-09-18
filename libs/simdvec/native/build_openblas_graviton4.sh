@@ -15,7 +15,7 @@
 # Build time: ~10 min on a 64-core Graviton4 instance.
 set -euo pipefail
 
-VERSION="${VERSION:-0.3.30}"
+VERSION="${VERSION:-0.3.34}"
 WORK="${WORK:-/tmp/openblas-build}"
 REPO_ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 DEST="${REPO_ROOT}/libs/native/libraries/build/platform/linux-aarch64"
@@ -25,7 +25,7 @@ mkdir -p "${WORK}"
 cd "${WORK}"
 
 if [ ! -d OpenBLAS ]; then
-    git clone --depth 1 --branch "v${VERSION}" https://github.com/OpenMathLib/OpenBLAS.git
+    git clone --branch "v${VERSION}" https://github.com/OpenMathLib/OpenBLAS.git
 fi
 
 cd OpenBLAS
