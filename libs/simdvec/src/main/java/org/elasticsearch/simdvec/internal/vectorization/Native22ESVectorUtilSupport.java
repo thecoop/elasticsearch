@@ -187,4 +187,13 @@ public final class Native22ESVectorUtilSupport extends PanamaESVectorUtilSupport
             OPENBLAS.matrixMultiply(a, b, m, k, n, result);
         }
     }
+
+    @Override
+    public void matrixVectorMultiply(float[] a, int rows, int cols, float[] v, float[] result) {
+        if (OPENBLAS == null) {
+            super.matrixVectorMultiply(a, rows, cols, v, result);
+        } else {
+            OPENBLAS.matrixVectorMultiply(a, rows, cols, v, result);
+        }
+    }
 }

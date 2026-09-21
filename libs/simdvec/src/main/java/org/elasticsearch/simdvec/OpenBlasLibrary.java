@@ -104,6 +104,28 @@ public abstract class OpenBlasLibrary {
     );
 
     /**
+     * Raw CBLAS SGEMV binding. Parameters follow the CBLAS convention exactly:
+     * {@code y = alpha * A @ x + beta * y}, where A is (m x n) row-major with leading
+     * dimension lda, x has length n, and y has length m.
+     */
+    @Function("cblas_sgemv")
+    @Critical(fallbackAdapter = Critical.UnsupportedFallback.class)
+    protected abstract void sgemv(
+        int layout,
+        int trans,
+        int m,
+        int n,
+        float alpha,
+        MemorySegment a,
+        int lda,
+        MemorySegment x,
+        int incx,
+        float beta,
+        MemorySegment y,
+        int incy
+    );
+
+    /**
      * Computes {@code C = A @ B}, overwriting C. A is (m x k), B is (k x n), C is (m x n),
      * all row-major. Semantically identical to
      * {@link org.elasticsearch.simdvec.ESVectorUtil#matrixMultiply(float[], float[], int, int, int, float[])}.
@@ -125,6 +147,28 @@ public abstract class OpenBlasLibrary {
             0.0f,
             MemorySegment.ofArray(c),
             n
+        );
+    }
+
+    /**
+     * Computes {@code result = A @ v}, overwriting result. A is (rows x cols) row-major,
+     * v has length cols, result has length rows. Semantically identical to
+     * {@link org.elasticsearch.simdvec.ESVectorUtil#matrixVectorMultiply(float[], int, int, float[], float[])}.
+     */
+    public void matrixVectorMultiply(float[] a, int rows, int cols, float[] v, float[] result) {
+        sgemv(
+            CBLAS_ROW_MAJOR,
+            CBLAS_NO_TRANS,
+            rows,
+            cols,
+            1.0f,
+            MemorySegment.ofArray(a),
+            cols,
+            MemorySegment.ofArray(v),
+            1,
+            0.0f,
+            MemorySegment.ofArray(result),
+            1
         );
     }
 }

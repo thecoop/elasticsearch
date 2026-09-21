@@ -14,6 +14,7 @@ import org.elasticsearch.benchmark.vector.VectorImplementation;
 import org.elasticsearch.benchmark.vector.VectorizationInfo;
 import org.elasticsearch.index.codec.vectors.VectorTestUtils;
 import org.elasticsearch.simdvec.ESVectorizationProvider;
+import org.elasticsearch.simdvec.OpenBlasLibrary;
 import org.elasticsearch.simdvec.internal.vectorization.ESVectorUtilSupport;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -45,7 +46,7 @@ public class MatrixVectorMultiplyBenchmark {
         VectorizationInfo.printOnce();
     }
 
-    @Param({ "SCALAR", "PANAMA" })
+    @Param({ "SCALAR", "PANAMA", "NATIVE" })
     VectorImplementation implementation;
 
     // ASH defaults are 10240 x 1024
@@ -69,6 +70,15 @@ public class MatrixVectorMultiplyBenchmark {
         impl = switch (implementation) {
             case SCALAR -> ESVectorizationProvider.lookup(false, false).getVectorUtilSupport();
             case PANAMA -> ESVectorizationProvider.lookup(true, false).getVectorUtilSupport();
+            case NATIVE -> {
+                if (OpenBlasLibrary.instance().isEmpty()) {
+                    throw new IllegalStateException(
+                        "NATIVE implementation requested but OpenBLAS is not available. "
+                            + "Build libopenblas.so with libs/simdvec/native/build_openblas_graviton4.sh"
+                    );
+                }
+                yield ESVectorizationProvider.lookup(true, true).getVectorUtilSupport();
+            }
             default -> throw new AssertionError(implementation);
         };
         Random random = new Random();
