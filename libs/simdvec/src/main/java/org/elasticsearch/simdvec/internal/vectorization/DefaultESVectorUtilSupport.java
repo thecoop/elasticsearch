@@ -854,6 +854,75 @@ public final class DefaultESVectorUtilSupport implements ESVectorUtilSupport {
     }
 
     @Override
+    public void matrixMultiply(byte[] a, byte[] b, int m, int k, int n, float[] result, TaskExecutor executor) {
+        // unroll 4x, so 4 values are accumulated into each c cell at once
+        int innerLimit = k - k % 4;
+        int taskNum = m / 4;
+
+        if (executor == null || taskNum < MIN_PARALLEL_TASKS) {
+            int[] acc = new int[n];
+            for (int r = 0; r < m; r++) {
+                multiplyRow(a, b, result, k, n, r, innerLimit, acc);
+            }
+        } else {
+            List<Callable<Void>> ops = new ArrayList<>(taskNum);
+            for (int r = 0; r < m; r += 4) {
+                int rowStart = r;
+                int rowEnd = Math.min(r + 4, m);
+                ops.add(() -> {
+                    int[] acc = new int[n];
+                    for (int i = rowStart; i < rowEnd; i++) {
+                        multiplyRow(a, b, result, k, n, i, innerLimit, acc);
+                    }
+                    return null;
+                });
+            }
+
+            try {
+                executor.invokeAll(ops);
+            } catch (IOException e) {
+                // can't happen
+                throw new AssertionError(e);
+            }
+        }
+    }
+
+    /**
+     * Accumulates row {@code i} of {@code A @ B} in {@code acc}, then writes it to {@code c}.
+     * The int accumulator is exact for {@code k < 2^17}, as each product is at most {@code 2^14} in magnitude.
+     */
+    private static void multiplyRow(byte[] a, byte[] b, float[] c, int k, int n, int i, int innerLimit, int[] acc) {
+        Arrays.fill(acc, 0);
+        int aBase = i * k;
+        int l = 0;
+        for (; l < innerLimit; l += 4) {
+            int a0 = a[aBase + l];
+            int a1 = a[aBase + l + 1];
+            int a2 = a[aBase + l + 2];
+            int a3 = a[aBase + l + 3];
+            int b0 = l * n;
+            int b1 = b0 + n;
+            int b2 = b0 + n * 2;
+            int b3 = b0 + n * 3;
+            for (int j = 0; j < n; j++) {
+                acc[j] += a0 * b[b0 + j] + a1 * b[b1 + j] + a2 * b[b2 + j] + a3 * b[b3 + j];
+            }
+        }
+        // tail
+        for (; l < k; l++) {
+            int al = a[aBase + l];
+            int bl = l * n;
+            for (int j = 0; j < n; j++) {
+                acc[j] += al * b[bl + j];
+            }
+        }
+        int cBase = i * n;
+        for (int j = 0; j < n; j++) {
+            c[cBase + j] = acc[j];
+        }
+    }
+
+    @Override
     public void matrixVectorMultiply(float[] a, int rows, int cols, float[] v, float[] result) {
         // unroll x4
         int i = 0;
