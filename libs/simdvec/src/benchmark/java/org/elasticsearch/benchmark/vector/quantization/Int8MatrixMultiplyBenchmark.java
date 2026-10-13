@@ -88,7 +88,7 @@ public class Int8MatrixMultiplyBenchmark {
     private byte[] a;
     /** B for matrixMultiply: (k x n). */
     private byte[] bMul;
-    private float[] result;
+    private int[] result;
 
     @Setup(Level.Trial)
     public void init() {
@@ -104,7 +104,7 @@ public class Int8MatrixMultiplyBenchmark {
         random.nextBytes(a);
         bMul = new byte[k * n];
         random.nextBytes(bMul);
-        result = new float[m * n];
+        result = new int[m * n];
     }
 
     @Setup(Level.Iteration)
