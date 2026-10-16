@@ -12,7 +12,9 @@ package org.elasticsearch.index.codec.vectors.ash;
 import org.apache.lucene.search.TaskExecutor;
 import org.elasticsearch.common.CheckedIntFunction;
 import org.elasticsearch.index.codec.vectors.VectorTestUtils;
+import org.elasticsearch.simdvec.AshSphericalScalarQuantizer;
 import org.elasticsearch.simdvec.ESVectorUtil;
+import org.elasticsearch.simdvec.ESVectorizationProvider;
 import org.elasticsearch.test.ESTestCase;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -21,6 +23,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -520,6 +523,219 @@ public class AsymmetricHashingQuantizerTests extends ESTestCase {
                 assertThat(encoder.vecCentroidDot(j), equalTo(ESVectorUtil.dotProduct(vectors[start + j], centroid)));
             }
         }
+    }
+
+    /**
+     * One-off experiment: compares the float projection in {@code BlockEncoder.encode} against an int8 projection,
+     * {@code quantizeExact(dequant(int8(x) @ int8(W)))}, and logs how far the codes and reconstructed dot products move.
+     * Data is isotropic Gaussian, so LEARNED W is close to RANDOM W here.
+     */
+    public void testInt8ProjectionMatchesFloatProjection() throws IOException {
+        int nVectors = 256;
+        int maxBlockSize = 64;
+        String[] schemes = { "W tensor / x row", "W column / x row", "W tensor / x tensor" };
+
+        for (int dim : new int[] { 128, 384, 1024, 2048, 3072, 4096 }) {
+            for (float fraction : new float[] { 0.5f, 1.0f }) {
+                for (AsymmetricHashingQuantizer.Method method : AsymmetricHashingQuantizer.Method.values()) {
+                    // Training W at high dims takes far too long for a one-off, and LEARNED W is close to RANDOM W on Gaussian data
+                    if (method == AsymmetricHashingQuantizer.Method.LEARNED && dim > 384) {
+                        continue;
+                    }
+                    for (int bits : new int[] { 1, 2, 3, 4, 8 }) {
+                        AsymmetricHashingQuantizer quantizer = new AsymmetricHashingQuantizer(
+                            fraction,
+                            bits,
+                            method,
+                            3,
+                            4,
+                            42L,
+                            executor()
+                        );
+                        int nDims = quantizer.nDims(dim);
+                        float[][] trainingVectors = new float[2 * dim][];
+                        for (int i = 0; i < trainingVectors.length; i++) {
+                            trainingVectors[i] = AshUtils.randomGaussians(random(), dim);
+                        }
+                        var w = train(quantizer, trainingVectors, i -> new float[dim]);
+                        AshSphericalScalarQuantizer scalarQuantizer = ESVectorizationProvider.getInstance()
+                            .getVectorScorerFactory()
+                            .newAshSphericalScalarQuantizer(bits);
+
+                        float[] centroid = AshUtils.randomGaussians(random(), dim);
+                        float[] query = AshUtils.randomGaussians(random(), dim);
+                        float[][] vectors = new float[nVectors][];
+                        for (int i = 0; i < nVectors; i++) {
+                            vectors[i] = AshUtils.randomGaussians(random(), dim);
+                        }
+                        float[] qt = ESVectorUtil.matrixVectorMultiply(w.wT(), nDims, dim, query);
+                        float queryDotCentroid = ESVectorUtil.dotProduct(query, centroid, dim);
+                        var precomputed = AsymmetricHashingQuantizer.precomputeCentroid(centroid, w.wT());
+                        var encoder = quantizer.newBlockEncoder(w.w(), dim, maxBlockSize);
+
+                        double[] sumSqErr = new double[schemes.length + 1];
+                        double sumSqTrue = 0;
+                        long[] identicalCodes = new long[schemes.length];
+                        long[] differingDims = new long[schemes.length];
+                        double[] cosine = new double[schemes.length];
+
+                        for (int start = 0; start < nVectors; start += maxBlockSize) {
+                            encoder.reset();
+                            float[] centered = new float[maxBlockSize * dim];
+                            float[] normSqs = new float[maxBlockSize];
+                            for (int j = 0; j < maxBlockSize; j++) {
+                                encoder.add(vectors[start + j], centroid);
+                                for (int d = 0; d < dim; d++) {
+                                    centered[j * dim + d] = vectors[start + j][d] - centroid[d];
+                                }
+                                normSqs[j] = ESVectorUtil.l2Normalize(centered, j * dim, dim);
+                            }
+                            encoder.encode(precomputed);
+
+                            for (int j = 0; j < maxBlockSize; j++) {
+                                float trueDot = ESVectorUtil.dotProduct(query, vectors[start + j], dim);
+                                sumSqTrue += (double) trueDot * trueDot;
+                                float floatScore = referenceScore(
+                                    qt,
+                                    new float[] { queryDotCentroid },
+                                    ESVectorUtil.ashPack(encoder.code(j), bits),
+                                    0,
+                                    nDims,
+                                    bits,
+                                    encoder.scale(j),
+                                    encoder.offset(j)
+                                );
+                                sumSqErr[schemes.length] += Math.pow(floatScore - trueDot, 2);
+                            }
+
+                            for (int s = 0; s < schemes.length; s++) {
+                                float[] latent = int8Latent(centered, maxBlockSize, dim, w.w(), nDims, s == 1, s == 2);
+                                for (int j = 0; j < maxBlockSize; j++) {
+                                    float[] code = new float[nDims];
+                                    float codeNorm = scalarQuantizer.quantizeExact(latent, j * nDims, code, 0, nDims);
+                                    float scale = codeNorm > 0 ? (float) Math.sqrt(normSqs[j]) / codeNorm : 0;
+                                    float offset = encoder.vecCentroidDot(j) - precomputed.normSq() - scale * ESVectorUtil.dotProduct(
+                                        precomputed.vector(),
+                                        code
+                                    );
+
+                                    float[] floatCode = encoder.code(j);
+                                    int differing = 0;
+                                    for (int d = 0; d < nDims; d++) {
+                                        if (code[d] != floatCode[d]) {
+                                            differing++;
+                                        }
+                                    }
+                                    differingDims[s] += differing;
+                                    identicalCodes[s] += differing == 0 ? 1 : 0;
+                                    cosine[s] += ESVectorUtil.dotProduct(code, floatCode) / (codeNorm * norm(floatCode));
+
+                                    float score = referenceScore(
+                                        qt,
+                                        new float[] { queryDotCentroid },
+                                        ESVectorUtil.ashPack(code, bits),
+                                        0,
+                                        nDims,
+                                        bits,
+                                        scale,
+                                        offset
+                                    );
+                                    float trueDot = ESVectorUtil.dotProduct(query, vectors[start + j], dim);
+                                    sumSqErr[s] += Math.pow(score - trueDot, 2);
+                                }
+                            }
+                        }
+
+                        double floatRmse = Math.sqrt(sumSqErr[schemes.length] / sumSqTrue);
+                        for (int s = 0; s < schemes.length; s++) {
+                            double int8Rmse = Math.sqrt(sumSqErr[s] / sumSqTrue);
+                            logger.info(
+                                "INT8-ASH dim={} nDims={} {} bits={} scheme=[{}] identicalCodes={} differingDims={} cosine={} "
+                                    + "relRmse(int8)={} relRmse(float)={}",
+                                dim,
+                                nDims,
+                                method,
+                                bits,
+                                schemes[s],
+                                String.format(Locale.ROOT, "%.3f", (double) identicalCodes[s] / nVectors),
+                                String.format(Locale.ROOT, "%.4f", (double) differingDims[s] / ((long) nVectors * nDims)),
+                                String.format(Locale.ROOT, "%.5f", cosine[s] / nVectors),
+                                String.format(Locale.ROOT, "%.5f", int8Rmse),
+                                String.format(Locale.ROOT, "%.5f", floatRmse)
+                            );
+                            assertTrue(Double.isFinite(int8Rmse));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Symmetric int8 projection of {@code rows} centered vectors by {@code w} (dim x nDims), dequantized back to floats.
+     * x is scaled per row or per block; W is scaled per tensor or per output column.
+     */
+    private float[] int8Latent(float[] centered, int rows, int dim, float[] w, int nDims, boolean wPerColumn, boolean xPerTensor) {
+        float[] wScales = new float[nDims];
+        Arrays.fill(wScales, 0f);
+        for (int l = 0; l < dim; l++) {
+            for (int j = 0; j < nDims; j++) {
+                wScales[j] = Math.max(wScales[j], Math.abs(w[l * nDims + j]));
+            }
+        }
+        if (wPerColumn == false) {
+            float max = 0;
+            for (float v : wScales) {
+                max = Math.max(max, v);
+            }
+            Arrays.fill(wScales, max);
+        }
+        byte[] wq = new byte[w.length];
+        for (int l = 0; l < dim; l++) {
+            for (int j = 0; j < nDims; j++) {
+                wq[l * nDims + j] = toInt8(w[l * nDims + j], wScales[j] / 127f);
+            }
+        }
+        for (int j = 0; j < nDims; j++) {
+            wScales[j] /= 127f;
+        }
+
+        float[] xScales = new float[rows];
+        float blockMax = 0;
+        for (int i = 0; i < rows; i++) {
+            for (int d = 0; d < dim; d++) {
+                xScales[i] = Math.max(xScales[i], Math.abs(centered[i * dim + d]));
+            }
+            blockMax = Math.max(blockMax, xScales[i]);
+        }
+        byte[] xq = new byte[rows * dim];
+        for (int i = 0; i < rows; i++) {
+            xScales[i] = (xPerTensor ? blockMax : xScales[i]) / 127f;
+            for (int d = 0; d < dim; d++) {
+                xq[i * dim + d] = toInt8(centered[i * dim + d], xScales[i]);
+            }
+        }
+
+        int[] product = new int[rows * nDims];
+        ESVectorUtil.matrixMultiply(xq, wq, rows, dim, nDims, product, executor());
+        float[] latent = new float[rows * nDims];
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < nDims; j++) {
+                latent[i * nDims + j] = product[i * nDims + j] * xScales[i] * wScales[j];
+            }
+        }
+        return latent;
+    }
+
+    private static byte toInt8(float value, float scale) {
+        if (scale == 0) {
+            return 0;
+        }
+        return (byte) Math.max(-127, Math.min(127, Math.round(value / scale)));
+    }
+
+    private static float norm(float[] v) {
+        return (float) Math.sqrt(ESVectorUtil.dotProduct(v, v));
     }
 
     private static AsymmetricHashingQuantizer.TrainedProjection train(
